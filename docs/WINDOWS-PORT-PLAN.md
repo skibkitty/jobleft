@@ -557,6 +557,9 @@ especially wants to be reviewed on its own. Suggested titles:
 Undecided as of 2026-10-02. Until it is decided:
 
 - Keep every fix on a branch **in this fork**. Do not open PRs against `blueturboguy07`.
+- Work is parked on `origin/windows-port` (backup only, not a PR): Stage 2/2c, Stage 3 with
+  `build-windows.ps1`, and the agent-facing docs, on top of the `09f73de` baseline. Local `main`
+  carries the same three commits and is ahead of `origin/main`; do not push `main`.
 - `git fetch upstream` occasionally; upstream was last active 2026-09-28.
 - If PRs are later wanted, the natural split is: Stage 2 alone (test hardening, uncontroversial),
   then Stage 4 one check per PR. The upstream author's commit style is a detailed subject line

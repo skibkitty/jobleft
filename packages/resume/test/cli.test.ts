@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -12,7 +12,7 @@ function cli(home: string, ...args: string[]): { code: number; out: string; err:
   return { code: r.status ?? -1, out: r.stdout, err: r.stderr };
 }
 
-test('the CLI walk-through: import, correct, restart, tailor, accept, export; files stay in the data folder', () => {
+test('the CLI walk-through: import, correct, restart, tailor, accept, export; files stay in the data folder', async () => {
   const t = tempDir('jl-resume-cli');
   const home = join(t.dir, 'home');
   try {
@@ -53,8 +53,21 @@ test('the CLI walk-through: import, correct, restart, tailor, accept, export; fi
     const files = readdirSync(join(home, 'files', 'resumes')).sort();
     assert.ok(files.includes('profile.json') && files.includes('jobs.json'));
     assert.ok(!existsSync(join(home, 'logs')) && !existsSync(join(home, 'tmp')));
-    // A closed pipe ends quietly.
-    const piped = spawnSync('sh', ['-c', `"${process.execPath}" "${MAIN}" profile show | head -1`], { env: { ...process.env, JOBLEFT_HOME: home }, encoding: 'utf8' });
-    assert.doesNotMatch(piped.stderr, /EPIPE|at /);
+    // A closed pipe ends quietly. Done in Node rather than as `sh -c "... | head -1"`: sh is a
+    // POSIX shell, and on Windows it is only on PATH when Git Bash is (a GitHub runner has it, an
+    // ordinary Windows install does not). Where sh was missing, spawnSync returned no stderr and
+    // this assertion failed on its own argument, reporting nothing about EPIPE.
+    const closedPipe = spawn(process.execPath, [MAIN, 'profile', 'show'], {
+      env: { ...process.env, JOBLEFT_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    closedPipe.stderr.setEncoding('utf8');
+    closedPipe.stderr.on('data', (c: string) => { stderr += c; });
+    const exited = new Promise<number>((r) => closedPipe.on('close', (code) => { r(code ?? 0); }));
+    await new Promise<void>((r) => closedPipe.stdout.once('data', () => r())); // one line, then hang up
+    closedPipe.stdout.destroy();
+    const closedCode = await exited;
+    assert.equal(closedCode, 0);
+    assert.doesNotMatch(stderr, /EPIPE|at /);
   } finally { t.done(); }
 });

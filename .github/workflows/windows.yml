@@ -65,8 +65,14 @@ jobs:
         id: tests
         continue-on-error: true # the installer, the smoke and the replay still run; the job fails at the end
         shell: pwsh
-        # Every workspace package's suite, one node --test each, with a per-test time limit and a forced exit: a hang
-        # or a lingering handle shows up as a named failure, never as a silent 90-minute job (pnpm -r cannot pass these flags).
+        # Every workspace package's suite, one node --test each. A hang is caught by --test-timeout as a
+        # named failure; a suite that passes but will not exit on a lingering handle is caught by the
+        # step's timeout-minutes below. --test-force-exit is deliberately NOT used: on Windows it calls
+        # exit() with undici's keep-alive sockets still open and Node's libuv aborts the process with
+        # "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)" (src\win\async.c), turning a suite
+        # that just passed 10/10 into a crash. ci.yml runs the same suites via pnpm test with no
+        # force-exit and a timeout for the same reason.
+        timeout-minutes: 30
         run: |
           $failed = @()
           foreach ($dir in (Get-ChildItem -Path packages, apps -Directory)) {
@@ -74,7 +80,7 @@ jobs:
             if (-not (Get-ChildItem -Path (Join-Path $dir.FullName 'test') -Filter '*.test.ts' -ErrorAction SilentlyContinue)) { continue }
             "`n===== $($dir.FullName)"
             Push-Location $dir.FullName
-            node --test --test-timeout=180000 --test-force-exit "test/*.test.ts"
+            node --test --test-timeout=180000 "test/*.test.ts"
             if ($LASTEXITCODE -ne 0) { $failed += $dir.Name }
             Pop-Location
           }
@@ -126,6 +132,7 @@ jobs:
           while (-not (Test-Path $run) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
           if (-not (Test-Path $run)) { Get-Content "$env:APPDATA\jobleft\logs\sidecar.log" -ErrorAction SilentlyContinue | Select-Object -Last 30; throw "no run/server.json after 40 s" }
           $j = Get-Content $run | ConvertFrom-Json
+          "::add-mask::$($j.token)"
           $health = Invoke-RestMethod -Uri "http://127.0.0.1:$($j.port)/api/v1/health"
           "health: $($health | ConvertTo-Json -Compress)"
           if ($health.app -ne 'jobleft') { throw "health did not answer jobleft" }
@@ -216,6 +223,7 @@ jobs:
           while (-not (Test-Path $run) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
           if (-not (Test-Path $run)) { Get-Content "$env:APPDATA\jobleft\logs\sidecar.log" -ErrorAction SilentlyContinue | Select-Object -Last 30; throw "no run/server.json after 60 s" }
           $j = Get-Content $run | ConvertFrom-Json
+          "::add-mask::$($j.token)"
           "JOBLEFT_QA_URL=http://127.0.0.1:$($j.port)/#token=$($j.token)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "JOBLEFT_QA_API=http://127.0.0.1:$($j.port)/api/v1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "JOBLEFT_QA_TOKEN=$($j.token)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

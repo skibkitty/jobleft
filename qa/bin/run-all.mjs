@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
+import { redact } from './redact.mjs';
 const QA = fileURLToPath(new URL('../', import.meta.url));
 const ORDER = ['onboarding', 'feed', 'tracker', 'resume', 'network', 'settings', 'extension'];
 const names = process.argv.slice(2).length ? process.argv.slice(2) : ORDER;
@@ -17,7 +18,7 @@ for (const name of names) {
   console.log(`\n== ${name}`);
   const t0 = Date.now();
   const r = spawnSync(process.execPath, [file], { env, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 12 * 60_000 });
-  const out = (r.stdout ?? '') + (r.stderr ?? '');
+  const out = redact((r.stdout ?? '') + (r.stderr ?? ''));
   process.stdout.write(out);
   const checks = out.split('\n').filter((l) => l.startsWith('CHECK '));
   const fails = checks.filter((l) => l.startsWith('CHECK FAIL')).length;

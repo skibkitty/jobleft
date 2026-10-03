@@ -13,6 +13,12 @@
 # Needs the Visual Studio Build Tools with the MSVC C++ x64/x86 build tools component for cl.exe
 # (Microsoft.VisualStudio.Component.VC.Tools.x86.x64; "MSVC v143 - VS 2022 C++ x64/x86 build tools" is its name on
 # VS 2022). cl.exe does not have to be on PATH: cargo finds it through the same Visual Studio detection CI relies on.
+#
+# Unless --skip-smoke is passed, it then smoke-tests the installer it just built: it removes the previous install,
+# installs over it, starts the app against a scratch JOBLEFT_HOME under %TEMP%, checks health, and stops it again.
+# Quit any running jobleft.exe first, because the single-instance plugin hands a second launch to the running one and
+# this launch would then never write a run file. The install folder it replaces is %LOCALAPPDATA%\jobleft under
+# installMode currentUser (%ProgramFiles%\jobleft otherwise); the data folder (%APPDATA%\jobleft) is never touched.
 [CmdletBinding()]
 param(
   [switch]$SkipSmoke
@@ -23,6 +29,7 @@ Set-StrictMode -Version Latest
 
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $Shell = Join-Path $Root 'apps\shell'
+$TauriDir = Join-Path $Shell 'src-tauri'
 # Cargo output goes to the shared target folder, never into the package (apps/shell/README.md). build-macos.sh does
 # the same with `export CARGO_TARGET_DIR`, and .cache/ is git-ignored.
 $env:CARGO_TARGET_DIR = Join-Path $Root '.cache\cargo-target'
@@ -82,54 +89,150 @@ $setup = Get-ChildItem -Path $SetupDir -Filter '*.exe' -ErrorAction SilentlyCont
 if (-not $setup) { throw "No installer was produced in $SetupDir" }
 Say ("Installer: {0} ({1} MB)" -f $setup.FullName, [math]::Round($setup.Length / 1MB, 1))
 
-# --- The smoke test is the same one the workflow runs, so a locally built installer is proven the same way: installed
-# --- silently, started, answering health, and stopped through the shutdown route (Windows has no SIGTERM).
-# --- Crawling is switched off so this does not start a live crawl against real boards.
 if ($SkipSmoke) {
   Write-Host "`nSkipped the smoke test (--skip-smoke)."
   exit 0
 }
 
-Say 'Smoke: install, start, health, stop'
-Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
-$exe = "$env:LOCALAPPDATA\jobleft\jobleft.exe"
-if (-not (Test-Path $exe)) {
-  $exe = (Get-ChildItem -Path "$env:LOCALAPPDATA", "$env:ProgramFiles" -Recurse -Filter 'jobleft.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+# --- The smoke test is the same one the workflow runs, so a locally built installer is proven the same way: installed
+# --- silently, started, answering health, and stopped through the shutdown route (Windows has no SIGTERM).
+# --- Crawling is switched off so this does not start a live crawl against real boards.
+#
+# --- Every check below exists because something stale can fake a green run: an old jobleft.exe a failed install left
+# --- behind, a run/server.json from an earlier run, a run/shell.json naming somebody else's process, or a jobleft.exe
+# --- still running that swallows this launch. So nothing here searches the disk for a jobleft.exe to fall back on, and
+# --- the run files are read out of a scratch data folder that this launch is the only writer of.
+$conf = Get-Content (Join-Path $TauriDir 'tauri.conf.json') -Raw | ConvertFrom-Json
+$exeName = "$($conf.mainBinaryName).exe"
+# installMode currentUser is the one NSIS puts under LOCALAPPDATA; perMachine and both go to Program Files, where /S
+# takes the machine-wide default without asking.
+$root = if ($conf.bundle.windows.nsis.installMode -eq 'currentUser') { $env:LOCALAPPDATA } else { $env:ProgramFiles }
+$InstallDir = Join-Path $root $conf.productName
+$Exe = Join-Path $InstallDir $exeName
+# The derivation is checked rather than trusted, because productName is read out of tauri.conf.json and only a plain
+# name may be joined onto the root. This is also what keeps the removal below away from %APPDATA%\jobleft, the data
+# folder, which sits one folder away from the install folder and holds the actual job history.
+if ((Split-Path -Parent $InstallDir) -ne $root -or $InstallDir -eq (Join-Path $env:APPDATA $conf.productName)) {
+  throw "tauri.conf.json puts the install in '$InstallDir', which is not '$root\$($conf.productName)'; refusing to install or remove anything"
 }
-if (-not $exe) { throw 'The installer ran but no jobleft.exe was found under LOCALAPPDATA or ProgramFiles.' }
-"installed at: $exe"
 
+# A second launch would be handed to a running jobleft by the single-instance plugin, and that process writes its run
+# files into its own data folder, so this smoke test would sit waiting for a file that is never coming.
+$busy = @(Get-Process -Name $conf.mainBinaryName -ErrorAction SilentlyContinue)
+if ($busy.Count) {
+  throw "jobleft is already running (pid $($busy.Id -join ', ')); quit it first, or the single-instance plugin hands this launch to it"
+}
+
+Say "Smoke: install $Exe, start, health, stop"
+# The old install goes first so the executable that appears below can only be this one's. It is an app directory, not
+# a data folder: the guard refuses to remove anything that does not look like an install of this app.
+if (Test-Path -LiteralPath $InstallDir) {
+  $left = @(Get-ChildItem -LiteralPath $InstallDir -Force)
+  if ($left.Count -and -not (Test-Path -LiteralPath $Exe)) {
+    throw "refusing to remove $InstallDir : it is not empty and holds no $exeName, so it is not an install of this app"
+  }
+  "removing the previous install ($($left.Count) entries)"
+  Remove-Item -LiteralPath $InstallDir -Recurse -Force
+}
+
+$installer = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
+$code = try { $installer.ExitCode } catch { $null }
+"installer exit code: $code"
+if ($code -ne 0) {
+  throw "the installer did not report success (exit code: '$code'), so there is nothing to smoke test. Stopping here on purpose: going looking for a jobleft.exe now would only find whatever an earlier build installed, and a green run against that would say nothing about this build"
+}
+if (-not (Test-Path -LiteralPath $Exe)) {
+  $wrote = if (Test-Path -LiteralPath $InstallDir) { (Get-ChildItem -LiteralPath $InstallDir -Force | ForEach-Object { $_.Name }) -join ', ' } else { "$InstallDir does not exist" }
+  throw "the installer exited 0 but there is no $Exe (it wrote: $wrote)"
+}
+"installed at $Exe ($([math]::Round((Get-Item -LiteralPath $Exe).Length / 1MB, 1)) MB, from $($setup.Name))"
+
+# A scratch data folder, new for this run: the run files checked below are then this launch's own, and the real
+# %APPDATA%\jobleft is neither read nor written. Both ends honour JOBLEFT_HOME - data_home() in
+# src-tauri/src/lib.rs and resolveHome() in apps/server/src/home.ts.
+$DataHome = Join-Path $env:TEMP "jobleft-smoke-$PID-$((Get-Date).ToString('yyyyMMdd-HHmmss'))"
+$env:JOBLEFT_HOME = $DataHome
 $env:JOBLEFT_AUTO_CRAWL = '0'
 $env:JOBLEFT_SEED_BOARDS = 'none'
-$p = Start-Process -FilePath $exe -PassThru
-$dataHome = if ($env:JOBLEFT_HOME) { $env:JOBLEFT_HOME } else { "$env:APPDATA\jobleft" }
-$run = Join-Path $dataHome 'run\server.json'
-$deadline = (Get-Date).AddSeconds(40)
-while (-not (Test-Path $run) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-if (-not (Test-Path $run)) {
-  Get-Content (Join-Path $dataHome 'logs\sidecar.log') -ErrorAction SilentlyContinue | Select-Object -Last 30
-  Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-  throw "no run/server.json after 40 s"
+$RunDir = Join-Path $DataHome 'run'
+$RunFile = Join-Path $RunDir 'server.json'
+$ShellFile = Join-Path $RunDir 'shell.json'
+New-Item -ItemType Directory -Path $RunDir -Force | Out-Null
+foreach ($stale in @($RunFile, $ShellFile, (Join-Path $RunDir 'server.lock'))) {
+  if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Force; "removed the stale $stale" }
 }
-$j = Get-Content $run -Raw | ConvertFrom-Json
-# The launch token is printed nowhere in this script: it is the x-jobleft-token header value and grants full access to
-# the loopback API for as long as the app runs.
-"server on port $($j.port), pid $($j.pid)"
 
-$health = Invoke-RestMethod -Uri "http://127.0.0.1:$($j.port)/api/v1/health"
-"health: $($health | ConvertTo-Json -Compress)"
-if ($health.app -ne 'jobleft') { throw 'health did not answer jobleft' }
+$app = $null
+$serverPid = $null
+$clean = $false
+try {
+  $launchedAt = Get-Date
+  $app = Start-Process -FilePath $Exe -PassThru
+  "launched pid $($app.Id) at $launchedAt, data folder $DataHome"
+  $deadline = (Get-Date).AddSeconds(40)
+  while (-not (Test-Path -LiteralPath $RunFile) -and (Get-Date) -lt $deadline) {
+    if (-not (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 500
+  }
+  if (-not (Test-Path -LiteralPath $RunFile)) {
+    if (-not (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) { throw "the launched jobleft.exe exited before writing run/server.json" }
+    throw "no run/server.json in $RunDir within 40 s"
+  }
+  if ((Get-Item -LiteralPath $RunFile).LastWriteTime -lt $launchedAt) {
+    throw "run/server.json is older than this launch, so it belongs to an earlier run and says nothing about this one"
+  }
+  $j = Get-Content -LiteralPath $RunFile -Raw | ConvertFrom-Json
+  $port = if ($j.PSObject.Properties['port']) { $j.port } else { $null }
+  $serverPid = if ($j.PSObject.Properties['pid']) { $j.pid } else { $null }
+  if (-not $port -or -not $serverPid) { throw 'run/server.json has no port and pid' }
+  # The launch token is printed nowhere in this script: it is the x-jobleft-token header value and grants full access to
+  # the loopback API for as long as the app runs.
+  "server on port $port, pid $serverPid"
 
-$shellFile = Join-Path $dataHome 'run\shell.json'
-$deadline = (Get-Date).AddSeconds(20)
-while (-not (Test-Path $shellFile) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
-"window: $(if (Test-Path $shellFile) { Get-Content $shellFile -Raw } else { 'no run/shell.json (window not reported)' })"
+  $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/v1/health"
+  "health: $($health | ConvertTo-Json -Compress)"
+  $healthApp = if ($health.PSObject.Properties['app']) { $health.app } else { $null }
+  if ($healthApp -ne 'jobleft') { throw "health did not answer jobleft (app: '$healthApp')" }
 
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$($j.port)/api/v1/shutdown" -Headers @{ 'x-jobleft-token' = $j.token } -ContentType 'application/json' -Body '{}' | Out-Null
-Start-Sleep -Seconds 4
-if (Get-Process -Id $j.pid -ErrorAction SilentlyContinue) { throw 'server still running after shutdown' }
-"server stopped cleanly; run file gone: $(-not (Test-Path $run))"
-Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+  # shell.json is written by the shell process itself once the window is up, so its pid is the one to compare against:
+  # a file belonging to another jobleft would carry that one's pid, not the one this script started.
+  $deadline = (Get-Date).AddSeconds(20)
+  while (-not (Test-Path -LiteralPath $ShellFile) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+  if (-not (Test-Path -LiteralPath $ShellFile)) { throw "the window never opened: no run/shell.json within 20 s" }
+  $s = Get-Content -LiteralPath $ShellFile -Raw | ConvertFrom-Json
+  $shellPid = if ($s.PSObject.Properties['pid']) { $s.pid } else { $null }
+  if ($shellPid -ne $app.Id) { throw "run/shell.json names shell pid $shellPid but this script launched $($app.Id)" }
+  "window opened by that same pid, on port $($s.port)"
+
+  Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$port/api/v1/shutdown" -Headers @{ 'x-jobleft-token' = $j.token } -ContentType 'application/json' -Body '{}' | Out-Null
+  $deadline = (Get-Date).AddSeconds(15)
+  while ((Get-Process -Id $serverPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+  if (Get-Process -Id $serverPid -ErrorAction SilentlyContinue) { throw "the server (pid $serverPid) is still running 15 s after the shutdown route" }
+  "the server stopped itself and took its run file with it: $(-not (Test-Path -LiteralPath $RunFile))"
+
+  Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+  try { $null = $app.WaitForExit(15000) } catch { }
+  if (Get-Process -Id $app.Id -ErrorAction SilentlyContinue) { throw "the launched jobleft.exe (pid $($app.Id)) is still running after the smoke test" }
+  $clean = $true
+}
+finally {
+  # Best effort, and deliberately silent about its own failures: a throw in here would replace whatever went wrong
+  # above, which is the one thing a cleanup block must never do.
+  if ($serverPid -and (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) {
+    try { Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue; "killed the leftover server (pid $serverPid)" } catch { }
+  }
+  if ($app -and (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) {
+    try { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; "killed the leftover jobleft (pid $($app.Id))" } catch { }
+  }
+  if ($clean) {
+    try { Remove-Item -LiteralPath $DataHome -Recurse -Force -ErrorAction SilentlyContinue; "removed the scratch data folder $DataHome" } catch { }
+  }
+  else {
+    $log = Join-Path $DataHome 'logs\sidecar.log'
+    if (Test-Path -LiteralPath $log) { "`n--- sidecar.log, last 30 lines ---"; Get-Content -LiteralPath $log -Tail 30 }
+    "`nthe scratch data folder is left for diagnosis: $DataHome"
+  }
+}
 
 Write-Host "`nInstaller: $($setup.FullName)"
-Write-Host "Data folder: $dataHome"
+Write-Host "Install folder: $InstallDir"

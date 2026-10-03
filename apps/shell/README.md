@@ -66,6 +66,29 @@ detection CI relies on. The installer lands at `.cache/cargo-target/release/bund
 without `CARGO_TARGET_DIR`, so on CI it is `apps/shell/src-tauri/target/release/bundle/nsis/`). A first build
 compiles every Rust dependency, so it takes several minutes.
 
+### What the Windows smoke test checks
+
+The smoke test replaces the install at `%LOCALAPPDATA%\jobleft` (derived from `productName` and `installMode` in
+`src-tauri/tauri.conf.json`, checked before anything is removed), installs over it, and starts the app against a
+scratch `JOBLEFT_HOME` under `%TEMP%`. The real data folder `%APPDATA%\jobleft` is never read or written. Quit any
+running `jobleft.exe` first: a second launch is handed to the running one by the single-instance plugin, which would
+leave this launch waiting for run files that never arrive.
+
+Every assertion is there because something stale can otherwise make a broken build look green. So the script never
+searches the disk for a `jobleft.exe` to fall back on, and the run files it reads are this launch's own:
+
+| Assertion | What it catches |
+|---|---|
+| The installer exits 0 | A silent NSIS failure. The run stops there instead of testing whatever an earlier build installed |
+| `%LOCALAPPDATA%\jobleft\jobleft.exe` exists and was just written | An installer that exits 0 without installing |
+| No `jobleft.exe` is running before the install | A launch the single-instance plugin would hand to another process |
+| `run/server.json` is deleted before the launch and not older than it | A stale run file from an earlier run passing as this one's |
+| `run/shell.json` names the pid this script launched | A run file belonging to some other jobleft |
+| Both pids are gone afterwards | A smoke test that leaves the machine in a worse state than it found it |
+
+A successful run deletes its scratch folder. A failed one keeps it and prints the path, because the sidecar log in it
+is what says why.
+
 ## Test hooks (environment; the app never sets them)
 
 | Variable | Effect |

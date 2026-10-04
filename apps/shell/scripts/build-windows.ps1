@@ -77,17 +77,28 @@ if ($LASTEXITCODE -ne 0) { throw "pack.ts failed (exit $LASTEXITCODE)" }
 
 # The Tauri CLI is run by its file in the pnpm store: `pnpm exec tauri` drops the link on this workspace's install policy.
 Say 'Building the NSIS installer (the first build compiles every Rust dependency; expect several minutes)'
-$cli = $null
-Push-Location $Shell
-try {
-  $cli = (node -p "require.resolve('@tauri-apps/cli/tauri.js', { paths: ['.'] })") | Select-Object -Last 1
-  node $cli build --bundles nsis
-} finally { Pop-Location }
-if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit $LASTEXITCODE)" }
+  $cli = $null
+  $buildStart = Get-Date
+  # Ensure no stale installer artifacts from previous builds remain before building
+  if (Test-Path -LiteralPath $SetupDir) {
+    Get-ChildItem -LiteralPath $SetupDir -Filter '*.exe' -ErrorAction SilentlyContinue | ForEach-Object {
+      try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue } catch { }
+    }
+  }
+  Push-Location $Shell
+  try {
+    $cli = (node -p "require.resolve('@tauri-apps/cli/tauri.js', { paths: ['.'] })") | Select-Object -Last 1
+    node $cli build --bundles nsis
+  } finally { Pop-Location }
+  if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit $LASTEXITCODE)" }
 
-$setup = Get-ChildItem -Path $SetupDir -Filter '*.exe' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $setup) { throw "No installer was produced in $SetupDir" }
-Say ("Installer: {0} ({1} MB)" -f $setup.FullName, [math]::Round($setup.Length / 1MB, 1))
+  $setup = Get-ChildItem -Path $SetupDir -Filter '*.exe' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if (-not $setup) { throw "No installer was produced in $SetupDir" }
+  # Require the installer to have been produced by THIS build (not a leftover)
+  if ($setup.LastWriteTime -lt $buildStart) {
+    throw "installer $($setup.FullName) was created before this build started ($buildStart); refusing to use a stale artifact"
+  }
+  Say ("Installer: {0} ({1} MB)" -f $setup.FullName, [math]::Round($setup.Length / 1MB, 1))
 
 if ($SkipSmoke) {
   Write-Host "`nSkipped the smoke test (--skip-smoke)."
@@ -185,6 +196,20 @@ try {
   $port = if ($j.PSObject.Properties['port']) { $j.port } else { $null }
   $serverPid = if ($j.PSObject.Properties['pid']) { $j.pid } else { $null }
   if (-not $port -or -not $serverPid) { throw 'run/server.json has no port and pid' }
+  # Ensure the server PID we read is still alive and belongs to jobleft process from this build context
+  $proc = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
+  if (-not $proc) { throw "server pid $serverPid from run/server.json is not running" }
+  $procName = $proc.ProcessName
+  if ($procName -ne $conf.mainBinaryName) { throw "server pid $serverPid is $procName (expected $($conf.mainBinaryName)); possible PID reuse" }
+  $procPath = $null
+  try { $procPath = (Get-Process -Id $serverPid -ErrorAction SilentlyContinue).Path } catch { }
+  if ($procPath -and (Test-Path -LiteralPath $Exe)) {
+    $expectedPath = [System.IO.Path]::GetFullPath($Exe)
+    $actualPath = [System.IO.Path]::GetFullPath($procPath)
+    if ($actualPath -ne $expectedPath) {
+      throw "server pid $serverPid executable path $actualPath does not match expected $expectedPath; possible PID reuse"
+    }
+  }
   # The launch token is printed nowhere in this script: it is the x-jobleft-token header value and grants full access to
   # the loopback API for as long as the app runs.
   "server on port $port, pid $serverPid"
@@ -218,12 +243,40 @@ try {
 finally {
   # Best effort, and deliberately silent about its own failures: a throw in here would replace whatever went wrong
   # above, which is the one thing a cleanup block must never do.
-  if ($serverPid -and (Get-Process -Id $serverPid -ErrorAction SilentlyContinue)) {
-    try { Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue; "killed the leftover server (pid $serverPid)" } catch { }
-  }
-  if ($app -and (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) {
-    try { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; "killed the leftover jobleft (pid $($app.Id))" } catch { }
-  }
+   if ($serverPid) {
+     $sp = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
+     if ($sp -and $sp.ProcessName -eq $conf.mainBinaryName) {
+       $shouldKill = $true
+       try {
+         $spPath = $sp.Path
+         if ($spPath -and (Test-Path -LiteralPath $Exe)) {
+           $expectedPath = [System.IO.Path]::GetFullPath($Exe)
+           $actualPath = [System.IO.Path]::GetFullPath($spPath)
+           if ($actualPath -ne $expectedPath) { $shouldKill = $false }
+         }
+       } catch { }
+       if ($shouldKill) {
+         try { Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue; "killed the leftover server (pid $serverPid)" } catch { }
+       }
+     }
+   }
+   if ($app -and (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) {
+     $ap = Get-Process -Id $app.Id -ErrorAction SilentlyContinue
+     if ($ap -and $ap.ProcessName -eq $conf.mainBinaryName) {
+       $shouldKill = $true
+       try {
+         $apPath = $ap.Path
+         if ($apPath -and (Test-Path -LiteralPath $Exe)) {
+           $expectedPath = [System.IO.Path]::GetFullPath($Exe)
+           $actualPath = [System.IO.Path]::GetFullPath($apPath)
+           if ($actualPath -ne $expectedPath) { $shouldKill = $false }
+         }
+       } catch { }
+       if ($shouldKill) {
+         try { Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue; "killed the leftover jobleft (pid $($app.Id))" } catch { }
+       }
+     }
+   }
   if ($clean) {
     try { Remove-Item -LiteralPath $DataHome -Recurse -Force -ErrorAction SilentlyContinue; "removed the scratch data folder $DataHome" } catch { }
   }

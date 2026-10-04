@@ -196,24 +196,14 @@ try {
   $port = if ($j.PSObject.Properties['port']) { $j.port } else { $null }
   $serverPid = if ($j.PSObject.Properties['pid']) { $j.pid } else { $null }
   if (-not $port -or -not $serverPid) { throw 'run/server.json has no port and pid' }
-  # Ensure the server PID we read is still alive and belongs to jobleft process from this build context
+  # Ensure the server PID we read is still alive and belongs to the Node sidecar (not the shell)
   $proc = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
   if (-not $proc) { throw "server pid $serverPid from run/server.json is not running" }
   $procName = $proc.ProcessName
-  if ($procName -ne $conf.mainBinaryName) { throw "server pid $serverPid is $procName (expected $($conf.mainBinaryName)); possible PID reuse" }
-  $procPath = $null
-  $validatedByPath = $false
-  try { $procPath = (Get-Process -Id $serverPid -ErrorAction SilentlyContinue).Path } catch { }
-  if ($procPath -and (Test-Path -LiteralPath $Exe)) {
-    $expectedPath = [System.IO.Path]::GetFullPath($Exe)
-    $actualPath = [System.IO.Path]::GetFullPath($procPath)
-    $validatedByPath = ($actualPath -eq $expectedPath)
-    if (-not $validatedByPath) {
-      throw "server pid $serverPid executable path $actualPath does not match expected $expectedPath; possible PID reuse"
-    }
-  }
-  # If path validation was not possible, only process name matches - this is a weaker guarantee than path match; document it via error context if needed
-  # but do not fail hard here in that case (pragmatic fallback). The error messages above already cover mismatches.
+  # Node sidecar process name on Windows is 'node' (node.exe)
+  $expectedServerName = 'node'
+  if ($procName -ne $expectedServerName) { throw "server pid $serverPid is $procName (expected $expectedServerName); possible PID reuse" }
+  # Path validation for server is optional; we don't have the exact sidecar path in this script.
   # The launch token is printed nowhere in this script: it is the x-jobleft-token header value and grants full access to
   # the loopback API for as long as the app runs.
   "server on port $port, pid $serverPid"
@@ -247,25 +237,22 @@ try {
 finally {
   # Best effort, and deliberately silent about its own failures: a throw in here would replace whatever went wrong
   # above, which is the one thing a cleanup block must never do.
-   if ($serverPid) {
-     $sp = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
-     if ($sp -and $sp.ProcessName -eq $conf.mainBinaryName) {
-       $shouldKill = $false
-       try {
-         $spPath = $sp.Path
-         if ($spPath -and (Test-Path -LiteralPath $Exe)) {
-           $expectedPath = [System.IO.Path]::GetFullPath($Exe)
-           $actualPath = [System.IO.Path]::GetFullPath($spPath)
-           if ($actualPath -eq $expectedPath) { $shouldKill = $true }
-         }
-       } catch {
-         $shouldKill = $false
-       }
-       if ($shouldKill) {
-         try { Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue; "killed the leftover server (pid $serverPid)" } catch { }
-       }
-     }
-   }
+    if ($serverPid) {
+      $sp = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
+      # Server is the Node sidecar; only kill if it looks like node (or if we cannot determine) as a last resort.
+      if ($sp) {
+        $spName = $sp.ProcessName
+        if ($spName -eq 'node') {
+          $shouldKill = $true
+        } else {
+          # If it's not 'node', do not auto-kill to avoid collateral damage
+          $shouldKill = $false
+        }
+        if ($shouldKill) {
+          try { Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue; "killed the leftover server (pid $serverPid)" } catch { }
+        }
+      }
+    }
    if ($app -and (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) {
      $ap = Get-Process -Id $app.Id -ErrorAction SilentlyContinue
      if ($ap -and $ap.ProcessName -eq $conf.mainBinaryName) {

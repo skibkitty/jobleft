@@ -63,8 +63,9 @@ You need macOS or Linux, Node 24 or newer, pnpm, and Google Chrome.
    ```sh
    pnpm --filter @jobleft/extension build
    ```
-   You see `built .../apps/extension/dist`.
-3. Start the stand-in app in a second terminal:
+   You see uilt .../apps/extension/dist.
+3. **Downloaded zip (alternative):** download jobleft-autofill-<app-version>.zip from the [jobleft releases page](https://github.com/Blueturboguy07/jobleft/releases/latest), unzip it, and load the extracted folder as unpacked in Chrome.
+4. Start the stand-in app in a second terminal:
    ```sh
    pnpm --filter @jobleft/extension standin
    ```
@@ -74,7 +75,7 @@ You need macOS or Linux, Node 24 or newer, pnpm, and Google Chrome.
    Its data is in `.jobleft-dev/extension-standin/` at the repository root. Add `-- --home <folder>` to use another
    folder, and `-- --reset` to start again from the persona.
    (With the real app, use `pnpm app:up` instead. The extension finds either one.)
-4. Start the practice pages in a third terminal:
+5. Start the practice pages in a third terminal:
    ```sh
    pnpm --filter @jobleft/extension practice
    ```
@@ -82,17 +83,17 @@ You need macOS or Linux, Node 24 or newer, pnpm, and Google Chrome.
    `http://127.0.0.1:47900/practice/index.html`. Saved copies of real pages are at
    `http://127.0.0.1:47900/recorded/index.html`. The log of every request, submit attempt, "Next" press and page
    change is at `http://127.0.0.1:47900/__log`.
-5. Start Chrome with a scratch profile (never your own profile):
+6. Start Chrome with a scratch profile (never your own profile):
    ```sh
    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --user-data-dir=/private/tmp/jobleft-chrome-test --no-first-run
    ```
-6. In that Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and choose
+7. In that Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and choose
    `apps/extension/dist`. Pin the jobleft button (the puzzle icon, then the pin).
-7. Pair: in the stand-in page, click **Pair a browser extension**. It shows a 6-digit code and the app's port. Click
+8. Pair: in the stand-in page, click **Pair a browser extension**. It shows a 6-digit code and the app's port. Click
    the jobleft button in Chrome, type the code and the port, and click **Pair**. The popup says "Paired with jobleft
    ... on this computer (port ...)".
    The stand-in page lists the paired browser with the date.
-8. Fill: open `http://127.0.0.1:47900/practice/job-a.html`. Click the jobleft button. The popup shows
+9. Fill: open `http://127.0.0.1:47900/practice/job-a.html`. Click the jobleft button. The popup shows
    "This page: Greenhouse · supported", the job "Software Engineer · Acme Practice Co" and the resume made for this
    job. Click **Fill this application**.
 9. Read the report: a panel opens on the right of the page. Each field it wrote has a teal outline. Each required
@@ -123,6 +124,8 @@ You need macOS or Linux, Node 24 or newer, pnpm, and Google Chrome.
 - **Undo fill**, **Fill again**, and **I submitted this application** (it asks "Yes, I submitted it" first).
 
 ## 5. The rules it keeps
+- The extension id never changes (pinned via manifest.key).
+
 
 | Rule | What happens |
 |---|---|

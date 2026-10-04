@@ -87,8 +87,14 @@ jobs:
           "`n===== failed suites: $($failed -join ', ')"
           if ($failed.Count -gt 0) { exit 1 }
 
-      - name: Build the UI
-        run: pnpm --filter @jobleft/ui build
+
+      - name: Build the extension and zip it
+        shell: pwsh
+        run: |
+          pnpm --filter @jobleft/extension build
+          $v = (Get-Content apps/server/package.json -Raw | ConvertFrom-Json).version
+          Compress-Archive -Path apps/extension/dist/* -DestinationPath "jobleft-autofill-$v.zip" -Force
+          "asset: jobleft-autofill-$v.zip"
 
       - name: Node runtime for the sidecar
         run: node apps/shell/scripts/fetch-node.mjs --target win-x64
@@ -152,6 +158,12 @@ jobs:
         with:
           name: jobleft-windows-setup
           path: apps/shell/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+      - name: Keep the extension zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobleft-extension
+          path: jobleft-autofill-*.zip
           if-no-files-found: error
 
       - name: Attach to the release

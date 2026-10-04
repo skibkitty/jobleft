@@ -17,7 +17,7 @@ target. Nothing personal leaves the laptop unless the person chooses an AI provi
 | Resume, letters | `packages/resume` | Import PDF/DOCX, profile proposal, truth-gated tailoring, PDF + DOCX export, ATS check, keyword gaps, cover letters |
 | Network tool | `packages/network` | `Connections.csv` import, coverage per company, who to message first with reasons, drafts the person copies (never sent) |
 | Assistant, AI engine | `packages/assistant`, `ai-engine` | Tool-using assistant over the person's own data; providers: publik, own key, local OpenAI-compatible, custom; proposals need confirmation |
-| Extension | `apps/extension` (Chrome MV3) | Pairing code, fills Greenhouse, Lever, Ashby, Workable (supported), Workday, iCIMS (partial); never submits; never on LinkedIn, Indeed, Glassdoor |
+| Extension | `apps/extension` (Chrome MV3) | Pairing code, fills Greenhouse, Lever, Ashby, Workable (supported), Workday, iCIMS (partial); never submits; never on LinkedIn, Indeed, Glassdoor. Zip asset shipped with releases. |
 | UI | `apps/ui` (Vite + React + Ant Design 5) | Feed, tabs, detail, resume workspace, profile, onboarding, tracker, dashboard, network, interview, assistant, settings |
 | Shell | `apps/shell` (Tauri v2 + Node 24 sidecar) | Unsigned debug `jobleft.app`: starts the server, one window, menu bar item, single instance, notifications, clean quit |
 

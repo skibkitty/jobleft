@@ -521,6 +521,16 @@ function ExtensionTab() {
           <Button type="primary" shape="round" style={{ alignSelf: 'flex-start' }} onClick={async () => { try { const c = await call('pairingCode'); setLeft(secondsLeft(c.expiresAt)); setCode(c); } catch (e) { ui.message?.error((e as UiError).message); } }}>Show a pairing code</Button>
         )}
         <p className="jl-small jl-muted" style={{ margin: 0 }}>The extension never gets your connections, AI keys or backups.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>Install the extension</h3>
+          <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <li>Download <code>jobleft-autofill-&lt;your version&gt;.zip</code> from the <a href="https://github.com/Blueturboguy07/jobleft/releases/latest" target="_blank" rel="noopener noreferrer">jobleft releases page</a>.</li>
+            <li>Unzip it.</li>
+            <li>Open <code>chrome://extensions</code>, turn on Developer mode, click Load unpacked.</li>
+            <li>Choose the folder that contains <code>manifest.json</code>.</li>
+            <li>Pin the extension, then click "Show a pairing code" and enter code+port in the popup.</li>
+          </ol>
+        </div>
       </Panel>
       <Panel title="Paired extensions">
         {pairings.error && <InlineError error={pairings.error} onRetry={() => { void pairings.reload(); }} />}

@@ -249,17 +249,14 @@ finally {
   # above, which is the one thing a cleanup block must never do.
    if ($serverPid) {
      $sp = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
-     if ($sp) {
+     if ($sp -and $sp.ProcessName -eq $conf.mainBinaryName) {
        $shouldKill = $false
        try {
          $spPath = $sp.Path
          if ($spPath -and (Test-Path -LiteralPath $Exe)) {
            $expectedPath = [System.IO.Path]::GetFullPath($Exe)
            $actualPath = [System.IO.Path]::GetFullPath($spPath)
-           if ($actualPath -eq $expectedPath -and $sp.ProcessName -eq $conf.mainBinaryName) { $shouldKill = $true }
-         }
-         else {
-           if ($sp.ProcessName -eq $conf.mainBinaryName) { $shouldKill = $false }
+           if ($actualPath -eq $expectedPath) { $shouldKill = $true }
          }
        } catch {
          $shouldKill = $false
@@ -271,17 +268,14 @@ finally {
    }
    if ($app -and (Get-Process -Id $app.Id -ErrorAction SilentlyContinue)) {
      $ap = Get-Process -Id $app.Id -ErrorAction SilentlyContinue
-     if ($ap) {
+     if ($ap -and $ap.ProcessName -eq $conf.mainBinaryName) {
        $shouldKill = $false
        try {
          $apPath = $ap.Path
          if ($apPath -and (Test-Path -LiteralPath $Exe)) {
            $expectedPath = [System.IO.Path]::GetFullPath($Exe)
            $actualPath = [System.IO.Path]::GetFullPath($apPath)
-           if ($actualPath -eq $expectedPath -and $ap.ProcessName -eq $conf.mainBinaryName) { $shouldKill = $true }
-         }
-         else {
-           if ($ap.ProcessName -eq $conf.mainBinaryName) { $shouldKill = $false }
+           if ($actualPath -eq $expectedPath) { $shouldKill = $true }
          }
        } catch {
          $shouldKill = $false

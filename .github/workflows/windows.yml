@@ -106,6 +106,9 @@ jobs:
           "apps/ui/node_modules/vite: $(Test-Path apps/ui/node_modules/vite)"
           node -e "console.log('vite ->', require.resolve('vite/package.json', { paths: ['apps/ui'] }))"
 
+      - name: Build the UI
+        run: pnpm --filter @jobleft/ui build
+
       - name: Sidecar tree
         env:
           JOBLEFT_PUBLIK_APP_TOKEN: ${{ secrets.PUBLIK_APP_TOKEN }}

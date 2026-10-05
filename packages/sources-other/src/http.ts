@@ -48,7 +48,7 @@ export function shapeError(detail: string): FeedError {
  * The smallest gap between two requests to one host. 1 second is the rule; the extra 100 ms absorbs connection setup
  * and timer jitter, so the gap a server observes is never under 1 second either.
  */
-export const MIN_GAP_MS = 1150;
+export const MIN_GAP_MS = 1100;
 
 /** The gap the pacer books for a Crawl-delay (ms): the delay plus the same 100 ms for jitter, never under MIN_GAP_MS. */
 export function gapForCrawlDelay(crawlDelayMs: number): number {

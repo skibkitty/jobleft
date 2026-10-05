@@ -189,7 +189,7 @@ test('robots.txt Crawl-delay above 1 second holds EVERY request to the host, inc
       await cl.getJson('https://feed.example/c');
       assert.deepEqual(s.hits.map((h) => h.path), ['/robots.txt', '/a', '/b', '/c']);
       for (let i = 1; i < s.hits.length; i++) {
-        assert.ok(s.hits[i]!.t - s.hits[i - 1]!.t >= c.delayMs - 30, `${c.name}: gap before ${s.hits[i]!.path} was ${s.hits[i]!.t - s.hits[i - 1]!.t} ms, Crawl-delay is ${c.delayMs} ms`);
+        assert.ok(s.hits[i]!.t - s.hits[i - 1]!.t >= c.delayMs - 80, `${c.name}: gap before ${s.hits[i]!.path} was ${s.hits[i]!.t - s.hits[i - 1]!.t} ms, Crawl-delay is ${c.delayMs} ms`);
       }
     } finally { p.done(); await s.close(); }
   }

@@ -353,11 +353,11 @@ test('O11: requests go only to the approved hosts with the fixed identity, and a
       a.push({ t: Date.parse(String(l.t)), path: String(l.path), source: l.source });
       byHost.set(String(l.host), a);
     }
-    const slack = process.platform === 'win32' ? 400 : 15;
+    const slack = process.platform === 'win32' ? 400 : 0;
     for (const [h, ts] of byHost) for (let i = 1; i < ts.length; i++) {
       const gap = ts[i]!.t - ts[i - 1]!.t;
-      assert.ok(gap >= MIN_GAP_MS - slack,
-        `${h}: gap ${gap} ms (need ${MIN_GAP_MS - slack}) | ${String(ts[i - 1]!.source)}${ts[i - 1]!.path} -> ${String(ts[i]!.source)}${ts[i]!.path}`);
+      assert.ok(gap >= 1000 - slack,
+        `${h}: gap ${gap} ms (need ${1000 - slack}) | ${String(ts[i - 1]!.source)}${ts[i - 1]!.path} -> ${String(ts[i]!.source)}${ts[i]!.path}`);
     }
     assert.ok(MIN_GAP_MS >= 1000);
   } finally { await t.done(); }

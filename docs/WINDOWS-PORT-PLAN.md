@@ -260,13 +260,19 @@ gap 934 ms | gh-speedyapply-ai/speedyapply/2027-AI-College-Jobs/main/NEW_GRAD_US
 
 Two *different sources* pacing one host: the booked slots are 1100 ms apart, but each lane pays its
 own wake-to-send latency and the arrivals compress by the difference — the mechanism 2a already
-diagnosed. So it took the same allowance, `MIN_GAP_MS - slack` with `win32 ? 400 : 15`, and the
-message now carries both request paths so a future occurrence identifies itself instead of just
-reporting a number.
+diagnosed. So it took the same allowance, applied to the quantity *this* test asserts:
+`1000 - slack` with `win32 ? 400 : 0`. The message now carries both request paths, which is what
+identified the two-sources-one-host shape in the first place.
+
+Not `MIN_GAP_MS - slack`, which is what `http.test.ts` uses because its property is the booked slot.
+Copying it here read 1085 off Windows against a bound that had always been 1000: it loosened
+`windows-latest` and turned `check (macos-latest)` red on a 1075 ms gap that had always passed, so
+the first push of this work traded one leg for the other. Off Windows the bound is still exactly
+`1000`, and the only relaxation is the one that was needed.
 
 Proven pre-existing rather than assumed: `git stash` plus a full `pnpm check` on pristine `010bb29`
 fails the same assertion (`gap 750 ms`), and `packages/sources-other` is untouched by the Stage 4
-work. It has never failed on the CI runner. The bound is 700 ms on Windows, so a gap that wide still
+work. It has never failed on the CI runner. The bound is 600 ms on Windows, so a gap that wide still
 fails — the one observation below it (`gap 469 ms`) was taken at 17 MB free RAM, where the machine was
 thrashing and every timing assertion in that run was unreliable. Local `pnpm check` is green again:
 883 passed, 0 failed.

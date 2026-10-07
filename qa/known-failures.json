@@ -1,0 +1,125 @@
+{
+  "note": "Known replay failures. run-all.mjs tolerates a failed check only when its scenario and name match an entry here, exactly (or by prefix when the name ends with *). Any other failure fails the run, and so does a scenario that crashes, times out, cannot start or leaves no side-channel record - see qa/bin/checks.mjs and qa/bin/run-all.mjs. Remove an entry when the underlying problem is fixed: a stale entry is reported as such and never fails a run.",
+  "entries": [
+    {
+      "scenario": "onboarding",
+      "name": "api-refuses-unknown-country",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#stage-4--the-windows-specific-replay-failures",
+      "reason": "onboarding.mjs:132 - POST /profile accepts country \"XX\" with status 200; the check wants 400. The API does not enforce the country enum."
+    },
+    {
+      "scenario": "onboarding",
+      "name": "onboarding-on-first-run",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s45-onboarding-on-first-run--relaunch-continues-onboarding",
+      "reason": "onboarding.mjs:148 - the app landed on #/jobs instead of the setup wizard. An auto-crawl ran before setup finished, so the \"fresh\" state already had 4339 jobs."
+    },
+    {
+      "scenario": "onboarding",
+      "name": "relaunch-continues-onboarding",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s45-onboarding-on-first-run--relaunch-continues-onboarding",
+      "reason": "onboarding.mjs:173 - after quitting on step 2 the app reopened on #/jobs, so steps 2-6 never ran. Likely the same root cause as onboarding-on-first-run."
+    },
+    {
+      "scenario": "onboarding",
+      "name": "no-banned-words:jobs-empty",
+      "category": "live-crawl noise",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#documented-but-out-of-scope",
+      "reason": "onboarding.mjs:91 audits a crawled posting, which carried the credit \"Credit Cards & Banking\" from the employer's own text. Not a jobleft rendering fault."
+    },
+    {
+      "scenario": "feed",
+      "name": "filter exact: country *",
+      "category": "live-crawl noise",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#documented-but-out-of-scope",
+      "reason": "feed.mjs:115 checks one card's own facts against the country filter; 1 of 84 jobs broke it. The country is whichever of CA/GB/IE/DE/AU the crawl happened to return first, so the name is matched by prefix. Same class as the banned-words entries: live data, not a deterministic fault."
+    },
+    {
+      "scenario": "feed",
+      "name": "counts: Applied badge equals saved applied jobs",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s43-feed-tabs-equal-tracker-and-feed-tabs-equal-tracker-after-reload",
+      "reason": "feed.mjs:172 - the tab badge read undefined where the API said 0, so the badge is not being found or not rendered. The Liked and External tabs in the same loop are the same class; if one of them breaks it will show up as a new failure, which is the point of not listing it here."
+    },
+    {
+      "scenario": "feed",
+      "name": "UI filter: a second filter keeps the first (Entry Level + Full-time)",
+      "category": "spec mismatch",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#stage-4--the-windows-specific-replay-failures",
+      "reason": "feed.mjs:205 - picking a second filter replaced the first (the request came back with the new job functions and work model but not the earlier level). Decide whether filters accumulate or replace; the check assumes they accumulate."
+    },
+    {
+      "scenario": "tracker",
+      "name": "card-equals-detail",
+      "category": "live noise",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#documented-but-out-of-scope",
+      "reason": "tracker.mjs:179 - one crawled card's detail did not open in time. The job id is in the failure text (\"lever:bannerbank:<uuid>: detail did not open\"), not in the check name, so this entry needs no wildcard."
+    },
+    {
+      "scenario": "tracker",
+      "name": "unknown-job-page",
+      "category": "live noise",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#documented-but-out-of-scope",
+      "reason": "tracker.mjs:200 - the not-found page leaked a crawled credit (\"Credit Cards & Banking Robinhood\"). The credit comes from the crawl, so which one trips it changes per run."
+    },
+    {
+      "scenario": "tracker",
+      "name": "feed-tabs-equal-tracker",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s43-feed-tabs-equal-tracker-and-feed-tabs-equal-tracker-after-reload",
+      "reason": "tracker.mjs:309 - the Applied tab count rendered NaN where the API said 2. A NaN in the DOM is arithmetic on an undefined field in the tab-count computation."
+    },
+    {
+      "scenario": "tracker",
+      "name": "feed-tabs-equal-tracker-after-reload",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s43-feed-tabs-equal-tracker-and-feed-tabs-equal-tracker-after-reload",
+      "reason": "tracker.mjs:309 again, called through verifyCounts('-after-reload') at line 345. Same NaN, so the fix is the same one."
+    },
+    {
+      "scenario": "tracker",
+      "name": "banned-words",
+      "category": "live noise",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#documented-but-out-of-scope",
+      "reason": "tracker.mjs:347 - the audit collects every banned word on the tracker surfaces into one array, so the check name carries no view; the failing surface (\"job detail\") is in the failure text. It is the same crawled \"Credit Cards & Banking\" credit as unknown-job-page."
+    },
+    {
+      "scenario": "resume",
+      "name": "Resume screens and Settings → Balance show no banned words (\"credits\", \"undefined\", \"NaN\" …)",
+      "category": "environment",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#stage-4--the-windows-specific-replay-failures",
+      "reason": "resume.mjs:517 - the balance read $0 because the replay job has no PUBLIK_APP_TOKEN on this fork, and \"$0\" is on the banned-words list. Goes away when the replay runs with a token, not when the UI changes."
+    },
+    {
+      "scenario": "network",
+      "name": "companies view: Kroger count equals API coverage and match rows",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s44-companies-view-kroger-count-equals-api-coverage-and-match-rows",
+      "reason": "network.mjs:246 - the API was right (coverage 6, matched 6) but ui=null: the scenario could not find the count in the DOM at all. Either the view failed to mount or the selector drifted."
+    },
+    {
+      "scenario": "network",
+      "name": "companies view: \"Who to contact first\" gives reasons",
+      "category": "product bug",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s44-companies-view-kroger-count-equals-api-coverage-and-match-rows",
+      "reason": "network.mjs:247 - the adjacent check in the same view, failing together with the Kroger count, which points at the whole view not mounting rather than one wrong number."
+    },
+    {
+      "scenario": "settings",
+      "name": "delete-all wipes the data folder contents",
+      "category": "spec vs contract",
+      "platform": "windows",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#s41-delete-all-wipes-the-data-folder-contents---highest-severity",
+      "reason": "settings.mjs:246 - every personal record cleared but 4339 crawled jobs and the database file survived. backup.ts:461 and the Settings copy both say crawled jobs stay, so whether this is a bug or the scenario's expectation is wrong is an open contract question, not a test fix. Highest severity item in Stage 4."
+    },
+    {
+      "scenario": "extension",
+      "name": "job_a_missing_stay_empty",
+      "category": "spec mismatch",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#stage-4--the-windows-specific-replay-failures",
+      "reason": "extension.mjs:215 - the autofill panel for a job the server does not have showed leftover values (middle name, GitHub) instead of staying empty. Decide whether the panel should clear on a missing job."
+    }
+  ]
+}

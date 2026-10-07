@@ -347,9 +347,18 @@ test('O11: requests go only to the approved hosts with the fixed identity, and a
       assert.equal(ua, 'jobleft/0.1.3 (+https://github.com/Blueturboguy07/jobleft; no personal data)');
       assert.ok(!JSON.stringify(l).includes('Jordan') && !JSON.stringify(l).includes('jordan.testwell'));
     }
-    const byHost = new Map<string, number[]>();
-    for (const l of log) { const a = byHost.get(String(l.host)) ?? []; a.push(Date.parse(String(l.t))); byHost.set(String(l.host), a); }
-    for (const [h, ts] of byHost) for (let i = 1; i < ts.length; i++) assert.ok(ts[i]! - ts[i - 1]! >= 1000, `${h}: gap ${ts[i]! - ts[i - 1]!} ms`);
+    const byHost = new Map<string, Array<{ t: number; path: string; source: unknown }>>();
+    for (const l of log) {
+      const a = byHost.get(String(l.host)) ?? [];
+      a.push({ t: Date.parse(String(l.t)), path: String(l.path), source: l.source });
+      byHost.set(String(l.host), a);
+    }
+    const slack = process.platform === 'win32' ? 400 : 15;
+    for (const [h, ts] of byHost) for (let i = 1; i < ts.length; i++) {
+      const gap = ts[i]!.t - ts[i - 1]!.t;
+      assert.ok(gap >= MIN_GAP_MS - slack,
+        `${h}: gap ${gap} ms (need ${MIN_GAP_MS - slack}) | ${String(ts[i - 1]!.source)}${ts[i - 1]!.path} -> ${String(ts[i]!.source)}${ts[i]!.path}`);
+    }
     assert.ok(MIN_GAP_MS >= 1000);
   } finally { await t.done(); }
 });

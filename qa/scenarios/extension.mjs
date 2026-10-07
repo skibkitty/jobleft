@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { recordFailure } from '../bin/checks.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -44,7 +45,7 @@ Browser.prototype.send = function (method, params = {}, sessionId) {
 
 let failed = 0, ran = 0;
 const ok = (n) => { ran++; console.log(`CHECK ok ${n}`); };
-const fail = (n, why) => { ran++; failed++; console.log(`CHECK FAIL ${n}: ${why}`); };
+const fail = (n, why) => { ran++; failed++; recordFailure(n); console.log(`CHECK FAIL ${n}: ${why}`); };
 const skip = (n, why) => { console.log(`CHECK skip ${n}: ${why}`); };
 const assert = (n, cond, why) => cond ? ok(n) : fail(n, why || 'assertion failed');
 

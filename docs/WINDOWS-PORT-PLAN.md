@@ -19,7 +19,8 @@ What was red is everything *around* it:
 
 1. `ci.yml`'s Windows leg failed on **one flaky timing assertion**. **Fixed** — see 2a.
 2. `windows.yml`'s `replay` job (the black-box QA harness) failed **18 checks**, of which ~5 are
-   genuinely Windows-specific. **Still to do** — see Stage 4.
+   genuinely Windows-specific. **The gate is fixed** (a mechanically enforced quarantine baseline, see
+   4.0); the bugs themselves are **still to do** — see Stage 4.
 3. `windows.yml`'s `replay` job **printed the launch token into the log**. **Fixed** — see 2c.
 
 Stage 2 is done and uncommitted. Stage 3 is done: the local installer builds and passes the same smoke test CI runs.
@@ -34,7 +35,7 @@ Stage 1 Route A is proven by it.
 | 2 | Green the Windows test legs | **done** 2026-10-02 (uncommitted) |
 | 2c | Stop leaking the launch token into CI logs | **done** 2026-10-02 (uncommitted) |
 | 3 | Build the installer locally | **done** 2026-10-02 (uncommitted): build + smoke both green |
-| 4 | Fix the Windows-specific replay failures | not started |
+| 4 | Fix the Windows-specific replay failures | **gate done** 2026-10-05 (quarantine baseline, 17 entries, in PR #1). The underlying bugs are **not started** — one fix per follow-up PR |
 | 5 | Decide upstream PRs | not started |
 | 6 | Windows ACL for `run/server.json` | not started (agreed to keep separate) |
 
@@ -246,6 +247,30 @@ must hold. A blocked wait would exceed it by construction, so the assertion stil
 regression without a second magic number. Verified the bound still discriminates: unheld host
 7 ms, held host 1113 ms. Then re-ran under 36-way CPU contention: 0/25 failures.
 
+### 2a'. The sibling pacing assertion in `runner.test.ts` got the same allowance — **done**
+
+`O11: requests go only to the approved hosts with the fixed identity, and at least 1 second apart per
+host` (`sources-other/test/runner.test.ts`) compared recorded request arrivals against a bare `1000`.
+It is the same class as 2a but was not touched then, and it failed on a loaded machine while
+`http.test.ts` passed. Naming the two requests in the failure message showed the shape:
+
+```
+gap 934 ms | gh-speedyapply-ai/speedyapply/2027-AI-College-Jobs/main/NEW_GRAD_USA.md -> gh-speedyapply-swe/speedyapply/2027-SWE-College-Jobs/main/INTERN_INTL.md
+```
+
+Two *different sources* pacing one host: the booked slots are 1100 ms apart, but each lane pays its
+own wake-to-send latency and the arrivals compress by the difference — the mechanism 2a already
+diagnosed. So it took the same allowance, `MIN_GAP_MS - slack` with `win32 ? 400 : 15`, and the
+message now carries both request paths so a future occurrence identifies itself instead of just
+reporting a number.
+
+Proven pre-existing rather than assumed: `git stash` plus a full `pnpm check` on pristine `010bb29`
+fails the same assertion (`gap 750 ms`), and `packages/sources-other` is untouched by the Stage 4
+work. It has never failed on the CI runner. The bound is 700 ms on Windows, so a gap that wide still
+fails — the one observation below it (`gap 469 ms`) was taken at 17 MB free RAM, where the machine was
+thrashing and every timing assertion in that run was unreliable. Local `pnpm check` is green again:
+883 passed, 0 failed.
+
 ### 2b. Stop `pnpm -r` from masking 16 suites behind 1 flake — **done, differently**
 
 `ci.yml`'s `pnpm test` does abort the leg on the first failure, and the plan was to port
@@ -352,6 +377,46 @@ UI while the final `Result` step failed. Always read the `Result` step, not the 
 **Scope decision (2026-10-02): Windows-specific failures only.** The platform-independent bugs
 and the live-crawl data noise listed below are documented but explicitly out of scope for now.
 
+### 4.0 The gate: a quarantine baseline (2026-10-05)
+
+The 18 failures below are real, but they are *not* this PR's regressions, and a red `replay` job
+hides new regressions behind them. So the gate now distinguishes the two.
+
+`qa/bin/run-all.mjs` tolerates a failed check **only** when its scenario and name match an entry in
+`qa/known-failures.json`. Any other failure fails the run. The invariant:
+
+> CI may only tolerate a failure that is explicitly present in the baseline.
+
+Not "CI ignores failures because this suite is flaky." Three properties make that true rather than
+merely stated:
+
+- **Fail-closed.** A scenario that cannot start, is killed by its 12-minute timeout, exits with an
+  unexpected code, or leaves a result that does not add up fails the run *even when every check it did
+  report is baselined*. A broken runner must never read as "only the known failures again".
+- **Names come from a side channel, not from parsing logs.** Each scenario's `fail()` appends one
+  JSON object per line to the file named by `JOBLEFT_QA_CHECKS`, which `run-all.mjs` sets itself to a
+  fresh directory per invocation. The printed `why` is whitespace-collapsed and truncated, and a name
+  can itself contain `": "`, so stdout cannot be parsed reliably.
+- **A stale entry is advice, never a failure.** An entry that did not fail this run is reported and
+  ignored, so fixing a bug cannot break an unrelated change. Stale entries are only reported for
+  scenarios that actually ran, which keeps a partial run (`run-all.mjs feed`) quiet.
+
+17 entries. The 18th failure, `no-mac-words-on-windows:step6`, was a copy bug and is fixed in this PR
+(`apps/ui/src/screens/Onboarding.tsx`, now sharing one `secureStore()` with Settings), so it is
+deliberately *not* listed as known.
+
+Two check names in earlier drafts of this plan were wrong, and both errors are the kind this
+mechanism invites — take names from source, never from a log line:
+
+| Draft name | Actual name | Why |
+| ---------- | ----------- | --- |
+| `card-equals-detail: lever:bannerbank:*` | `card-equals-detail` | the job id is in the failure text, not the name (`tracker.mjs:148`) |
+| `banned-words: job detail` | `banned-words` | the tracker audit pools every surface into one check (`tracker.mjs:347`) |
+| `filter exact: country CA` | `filter exact: country *` | the country is whichever of CA/GB/IE/DE/AU the crawl returned first (`feed.mjs:115`), so it needs a prefix entry |
+
+**Not in this PR:** any of the 4 real product bugs, and any change to `delete-all` behaviour — the
+scenario's expectation contradicts `backup.ts:461`, which is a contract question (see S4.1).
+
 ### S4.1 `delete-all wipes the data folder contents` — HIGHEST SEVERITY
 
 `qa/scenarios/settings.mjs:609`. Observed:
@@ -437,8 +502,8 @@ Live-crawl data noise — the scenarios need hardening, not app fixes:
 
 | Check | Symptom |
 | ----- | ------- |
-| `no-banned-words:jobs-empty` / `banned-words: job detail` / `unknown-job-page` | Real crawled posting contains the garbage string `"credit: .or likely Full Stack Software Engineer, Credit Cards & Banking Robinhood / Money."` |
-| `filter exact: country CA` | `1/78 jobs break the filter` |
+| `no-banned-words:jobs-empty` / `banned-words` / `unknown-job-page` | Real crawled posting contains the garbage string `"credit: .or likely Full Stack Software Engineer, Credit Cards & Banking Robinhood / Money."` |
+| `filter exact: country *` | `1/78 jobs break the filter` |
 | `job_a_missing_stay_empty` | practice-server scenario |
 
 ---

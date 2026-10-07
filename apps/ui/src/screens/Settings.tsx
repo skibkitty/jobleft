@@ -21,11 +21,7 @@ import { ago, dateText, fitIndexText, hostOf, plural, secondsLeft } from '../lib
 import { readAllPages } from '../lib/pages.ts';
 import { rememberAiCheck } from '../lib/aiHealth.ts';
 import { dailyLimitText, zeroBalanceText } from '../lib/dailyLimit.ts';
-
-/** Where keys are kept on this system: the macOS Keychain, or an encrypted file in the data folder elsewhere (Windows). */
-function secureStore(): string {
-  return /Mac|iPhone|iPad/.test(navigator.userAgent) ? 'the macOS Keychain' : 'an encrypted file in the data folder';
-}
+import { secureStore } from '../lib/platform.ts';
 
 const TABS = [
   { key: 'ai', label: 'AI provider', icon: <ApiOutlined /> },

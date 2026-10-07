@@ -59,9 +59,22 @@ repo's real vocabulary docs are `docs/INTERFACES.md`, `apps/shell/README.md` and
 - **CI reads as green when it is not.** In `.github/workflows/windows.yml` the test and replay
   steps are `continue-on-error: true` and the verdict arrives in a final `Result` step. Read the
   `Result` step output, not the step colours in the GitHub UI.
+- **The replay job's red is usually a *new* failure, not the old ones.** `qa/bin/run-all.mjs`
+  fails closed: it tolerates a failed check only when `scenario` + `name` match an entry in
+  `qa/known-failures.json`, and a scenario that crashes, times out, exits oddly or leaves a result
+  that does not add up fails the run outright. So a red `replay` means read the
+  `== NOT in qa/known-failures.json` block — that block is the regression. The
+  `== known failures tolerated` block is expected. An `== stale baseline entries` block is only
+  advice: it never fails a run, so fix the bug and delete the entry in a follow-up. Check names in
+  that file were read from **source**, not from log lines — a log cannot show where a name ends when
+  the name contains `": "`. See `qa/scenarios/README.md`.
 - **Redact the launch token before quoting any log.** `gh run view --log` prints
   `JOBLEFT_QA_TOKEN` in plain text. It is the `x-jobleft-token` header value and grants full access
   to the loopback API. Write `<REDACTED>` in its place, in issues and commits as well as chat.
+- **Never rewrite a scenario file with PowerShell 5.1 `Set-Content`/`Out-File`.** They default to
+  the ANSI code page, which silently mangles the non-ASCII in check names (`→`, `…`) that
+  `qa/known-failures.json` matches on. Use the editor tools, or `node`/`-Encoding utf8`, and check
+  `git diff --stat` shows only the lines you meant to touch.
 
 ## Vocabulary
 

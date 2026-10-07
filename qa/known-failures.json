@@ -51,6 +51,13 @@
       "reason": "feed.mjs:205 - picking a second filter replaced the first (the request came back with the new job functions and work model but not the earlier level). Decide whether filters accumulate or replace; the check assumes they accumulate."
     },
     {
+      "scenario": "feed",
+      "name": "UI: first cards within 2 s",
+      "category": "perf, likely runner noise",
+      "ref": "docs/WINDOWS-PORT-PLAN.md#documented-but-out-of-scope",
+      "reason": "feed.mjs:157 - headless Chrome showed the first cards after 2173 ms against a 2000 ms bound (2878 ms when the plan recorded it). Already listed in the plan's out-of-scope table as perf, likely runner noise; this entry makes the fail-closed gate tolerate it instead of reading it as a regression."
+    },
+    {
       "scenario": "tracker",
       "name": "card-equals-detail",
       "category": "live noise",

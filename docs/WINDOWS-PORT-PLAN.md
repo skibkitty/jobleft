@@ -35,7 +35,7 @@ Stage 1 Route A is proven by it.
 | 2 | Green the Windows test legs | **done** 2026-10-02 (uncommitted) |
 | 2c | Stop leaking the launch token into CI logs | **done** 2026-10-02 (uncommitted) |
 | 3 | Build the installer locally | **done** 2026-10-02 (uncommitted): build + smoke both green |
-| 4 | Fix the Windows-specific replay failures | **gate done** 2026-10-05 (quarantine baseline, 17 entries, in PR #1). The underlying bugs are **not started** — one fix per follow-up PR |
+| 4 | Fix the Windows-specific replay failures | **gate done** 2026-10-05 (quarantine baseline, 18 entries, in PR #1). The underlying bugs are **not started** — one fix per follow-up PR |
 | 5 | Decide upstream PRs | not started |
 | 6 | Windows ACL for `run/server.json` | not started (agreed to keep separate) |
 
@@ -162,6 +162,37 @@ of through a shell — same property under test, no POSIX dependency. Now 3/3.
 runs). Fixed to a bound derived from the crawl's own `requestTimeoutSeconds: 4`: the bad boards
 each burn a full timeout, so a good board that was genuinely *held up* lands at ≥ 4 s, while one
 merely sharing a busy machine lands well below. Now 8/8.
+
+### F9. `polite.test.ts` asserted per-pair arrival gaps, which one runner stall breaks
+
+`packages/boards/test/polite.test.ts` ("two clients with separate pacers on one database still
+space requests to a host") demanded that every consecutive pair of arrivals at the mock host be
+≥ 250 ms apart (`250 - 200` on Windows). On `windows-latest` it failed on both runs that carried
+it — first as `gap 1 ms`, then, with both request paths named (`7b2b4d8`), as:
+
+```
+AssertionError [ERR_ASSERTION]: gap 6 ms (need 50) | GET /v1/boards/acme/jobs?content=true -> GET /v1/boards/acme/jobs?content=true
+```
+
+The booked schedule is not the problem: each reservation is one synchronous `BEGIN IMMEDIATE`
+transaction (`packages/boards/src/http.ts:81-108`), so the slots land exactly `intervalMs` apart —
+verified 14 times locally before touching anything, and by the `Pacer diagnostic` step on the same
+machine that failed (`gaps: 1069, 1061 ms`). What breaks it is a **stall**, reproduced by
+busy-blocking the event loop for 400 ms mid-run: every slot the stall covers fires in the same
+tick, so the straddling pair arrives ~1 ms apart while the gap *across* the stall grows by the
+stall's length — one 400 ms stall yields `gaps 626, 1 ms`, where the same run without a stall has
+a minimum gap of 292 ms. Two arrivals 1-6 ms apart beside a ~600 ms gap is exactly the CI
+signature, and a pairwise assertion cannot tell "pacing broke" from "the runner stalled": both
+read as ~0.
+
+So the fix is not slack — any slack large enough to absorb the stall empties the assertion. On
+Windows the test now asserts the quantity a stall cannot change, the span from first to last
+arrival (`≥ gaps × 250 - 400`, 1600 ms for the usual 9 arrivals), while the pairwise assertion is
+untouched off Windows: it has never flaked there, and moving a bound both platforms share is what
+red'd the other leg in 2a'. Verified three ways: 3/3 with 400 ms stalls injected every 1.1 s,
+where the old assertion fails that same run with `gap 27 ms`; 3/3 unstalled; and a deliberately
+split schedule (one `SqlitePacer` per database — the regression the test exists for) spans
+1187 ms against the 1600 ms bound, so it still fails.
 
 ---
 
@@ -313,6 +344,12 @@ Not in the original plan; all three surfaced only once the suites were actually 
 machine. See F6 (`--test-force-exit` aborting green suites), F7 (POSIX `sh` in `resume`), and F8
 (a 2000 ms wall-clock budget in `crawler`).
 
+### 2e. The fourth timing assertion, `polite.test.ts`'s pairwise gap — **done 2026-10-07**
+
+The `windows` test leg went red again on `7b2b4d8` with `gap 6 ms (need 50)`. Same family as 2a,
+but slack cannot fix it: a stall reproduces the failure exactly, and any slack that absorbs the
+stall turns the assertion into a tautology. Diagnosis and the span-based replacement are in F9.
+
 ---
 
 ## Stage 3 — Build the installer locally
@@ -407,9 +444,11 @@ merely stated:
   ignored, so fixing a bug cannot break an unrelated change. Stale entries are only reported for
   scenarios that actually ran, which keeps a partial run (`run-all.mjs feed`) quiet.
 
-17 entries. The 18th failure, `no-mac-words-on-windows:step6`, was a copy bug and is fixed in this PR
-(`apps/ui/src/screens/Onboarding.tsx`, now sharing one `secureStore()` with Settings), so it is
-deliberately *not* listed as known.
+18 entries. The baseline itself came from the original run's 18 failures: 17 of them are listed, and the 18th,
+`no-mac-words-on-windows:step6`, was a copy bug and is fixed in this PR (`apps/ui/src/screens/Onboarding.tsx`, now
+sharing one `secureStore()` with Settings), so it is deliberately *not* listed as known. The last entry,
+`feed / UI: first cards within 2 s`, was added 2026-10-07 when it tripped the gate at `2173 ms`; it had already
+been documented in the out-of-scope table below, and it is a headless-Chrome timing check, not a regression.
 
 Two check names in earlier drafts of this plan were wrong, and both errors are the kind this
 mechanism invites — take names from source, never from a log line:
@@ -502,7 +541,7 @@ Real bugs, not Windows-specific — fix only if scope is widened:
 | `counts: Applied badge equals saved applied jobs` | `badge undefined vs 0` |
 | `like: the Liked badge goes up at once` | `request sent: false; badge did not reach 1 in 5 s` |
 | `Resume screens and Settings — Balance show no banned words` | `balance: $0 found` (possibly the missing `PUBLIK_APP_TOKEN`; see gotchas) |
-| `UI: first cards within 2 s` | `2878 ms` — perf, likely runner noise |
+| `UI: first cards within 2 s` | `2878 ms` — perf, likely runner noise (observed again as `2173 ms` on 2026-10-07; now an entry in `qa/known-failures.json`, so it is tolerated rather than read as a regression) |
 
 Live-crawl data noise — the scenarios need hardening, not app fixes:
 

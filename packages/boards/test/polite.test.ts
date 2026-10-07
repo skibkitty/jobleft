@@ -20,11 +20,22 @@ test('two clients with separate pacers on one database still space requests to a
     const url = 'https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true';
     await Promise.all([...Array(4)].flatMap(() => [a.getJson(url), b.getJson(url)]));
     const hits = mock.log.filter((e) => e.host === 'boards-api.greenhouse.io').sort((x, y) => x.at - y.at);
-    // Windows timers can wake a few ms before Date.now() says so (15.6 ms clock granularity); a little slack there.
-    const slack = process.platform === 'win32' ? 200 : 0; // shared runners: the first waiter wakes late, the gap measures wake times
-    for (let i = 1; i < hits.length; i++) {
-      const gap = hits[i]!.at - hits[i - 1]!.at;
-      assert.ok(gap >= 250 - slack, `gap ${gap} ms (need ${250 - slack}) | ${hits[i - 1]!.method} ${hits[i - 1]!.path} -> ${hits[i]!.method} ${hits[i]!.path}`);
+    const gaps = hits.slice(1).map((h, i) => h.at - hits[i]!.at);
+    if (process.platform === 'win32') {
+      // One event-loop stall on a loaded runner, longer than the 300 ms interval, fires every slot it covers in the
+      // same tick: the straddling pair lands 1-6 ms apart and the gap across the stall grows by the stall's length
+      // (reproduced: one 400 ms stall yields gaps 626, 1 ms). The booked slots are sound, and the stall cannot
+      // shrink the span the whole run covers — while that span still fails the regression this test exists for:
+      // two clients not sharing the schedule land both of their runs inside one ~1200 ms window. 400 ms of slack,
+      // the same allowance the crawler's own timing assertions give the same class of stall.
+      const span = hits[hits.length - 1]!.at - hits[0]!.at;
+      const need = gaps.length * 250 - 400;
+      assert.ok(span >= need, `span ${span} ms (need ${need}) over ${gaps.length} gaps | ${gaps.join(', ')} ms`);
+    } else {
+      for (let i = 1; i < hits.length; i++) {
+        const gap = hits[i]!.at - hits[i - 1]!.at;
+        assert.ok(gap >= 250, `gap ${gap} ms (need 250) | ${hits[i - 1]!.method} ${hits[i - 1]!.path} -> ${hits[i]!.method} ${hits[i]!.path}`);
+      }
     }
     for (const e of mock.log) assert.equal(e.headers['user-agent'], USER_AGENT);
   } finally { p1.close(); p2.close(); await mock.close(); rmSync(dir, { recursive: true, force: true }); }

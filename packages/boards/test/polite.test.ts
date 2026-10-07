@@ -19,10 +19,13 @@ test('two clients with separate pacers on one database still space requests to a
     const b = createBoardHttp({ pacer: p2, hostMap: mock.hostMap });
     const url = 'https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true';
     await Promise.all([...Array(4)].flatMap(() => [a.getJson(url), b.getJson(url)]));
-    const times = mock.log.filter((e) => e.host === 'boards-api.greenhouse.io').map((e) => e.at).sort((x, y) => x - y);
+    const hits = mock.log.filter((e) => e.host === 'boards-api.greenhouse.io').sort((x, y) => x.at - y.at);
     // Windows timers can wake a few ms before Date.now() says so (15.6 ms clock granularity); a little slack there.
     const slack = process.platform === 'win32' ? 200 : 0; // shared runners: the first waiter wakes late, the gap measures wake times
-    for (let i = 1; i < times.length; i++) assert.ok(times[i]! - times[i - 1]! >= 250 - slack, `gap ${times[i]! - times[i - 1]!} ms`);
+    for (let i = 1; i < hits.length; i++) {
+      const gap = hits[i]!.at - hits[i - 1]!.at;
+      assert.ok(gap >= 250 - slack, `gap ${gap} ms (need ${250 - slack}) | ${hits[i - 1]!.method} ${hits[i - 1]!.path} -> ${hits[i]!.method} ${hits[i]!.path}`);
+    }
     for (const e of mock.log) assert.equal(e.headers['user-agent'], USER_AGENT);
   } finally { p1.close(); p2.close(); await mock.close(); rmSync(dir, { recursive: true, force: true }); }
 });

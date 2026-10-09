@@ -22,13 +22,18 @@ test('O9: six hostile boards and four healthy ones: the healthy jobs are all sto
   const t0 = Date.now();
   let peak = 0;
   const sampler = setInterval(() => { peak = Math.max(peak, process.memoryUsage().rss); }, 50);
+  // A good board that the bad ones actually held up has waited out a timeout, so it lands at or
+  // above this. One that is merely running on a loaded machine lands well below it. The bound is
+  // the request timeout the crawl is given below, not a magic number: on a busy Windows box a good
+  // board measured 2.1 s while still finishing long before any bad board gave up.
+  const REQUEST_TIMEOUT_MS = 4_000;
   try {
     const out = await crawlOnce(store, m.boards, { config: cfg({ requestTimeoutSeconds: 4, maxBodyMB: 16 }) });
     for (const b of out.report.boards) finishedAt.set(b.board, b.elapsedMs);
     const by = new Map(out.report.boards.map((b) => [b.board, b]));
     for (const g of ['good1', 'good2', 'good3', 'good4']) {
       assert.equal(by.get(g)!.status, 'ok');
-      assert.ok(by.get(g)!.elapsedMs < 2000, `${g} was not held up by the bad boards (${by.get(g)!.elapsedMs} ms)`);
+      assert.ok(by.get(g)!.elapsedMs < REQUEST_TIMEOUT_MS, `${g} was not held up by the bad boards (${by.get(g)!.elapsedMs} ms)`);
     }
     assert.equal(allJobs(store).total, 100, 'every healthy job is stored and nothing from the bad boards');
     const want: Record<string, string> = { hang: 'timeout', slow: 'timeout', huge: 'too_large', broken: 'broken_reply', loop: 'redirect', junk: 'too_many_jobs' };

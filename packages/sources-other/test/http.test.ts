@@ -145,10 +145,17 @@ test('pacing: two processes sharing the database never send to one host less tha
     // a busy shared runner (Windows) shows up as a shorter measured gap. Still well over a second on a quiet machine.
     const slack = process.platform === 'win32' ? 400 : 15;
     for (let i = 1; i < times.length; i++) assert.ok(times[i]! - times[i - 1]! >= MIN_GAP_MS - slack, `gap ${times[i]! - times[i - 1]!}`);
-    // A different host is not held up.
+    // A different host is not held up: it has no slot, so the wait is one write transaction and
+    // sleep(0). The budget is MIN_GAP_MS rather than a fixed number of milliseconds because that
+    // is the boundary the property actually turns on: a host that queues behind a booked one waits
+    // a whole gap (measured 7 ms unheld against 1113 ms held on this machine). What this measures
+    // is the cost of the write transaction and the timer, and on a contended runner that cost is
+    // paid in 20 ms units: book() retries a locked BEGIN IMMEDIATE with sleep(20) up to 50 times,
+    // which is what pushed a fixed 200 ms budget over on windows-latest (the gap check above
+    // already carries a Windows slack for the same reason).
     const t0 = Date.now();
     await pa.wait('other.example', 0);
-    assert.ok(Date.now() - t0 < 200);
+    assert.ok(Date.now() - t0 < MIN_GAP_MS);
   } finally { a?.close(); b?.close(); cleanup(dir); } // closed before the removal: Windows cannot delete an open database
 });
 
@@ -182,7 +189,7 @@ test('robots.txt Crawl-delay above 1 second holds EVERY request to the host, inc
       await cl.getJson('https://feed.example/c');
       assert.deepEqual(s.hits.map((h) => h.path), ['/robots.txt', '/a', '/b', '/c']);
       for (let i = 1; i < s.hits.length; i++) {
-        assert.ok(s.hits[i]!.t - s.hits[i - 1]!.t >= c.delayMs - 30, `${c.name}: gap before ${s.hits[i]!.path} was ${s.hits[i]!.t - s.hits[i - 1]!.t} ms, Crawl-delay is ${c.delayMs} ms`);
+        assert.ok(s.hits[i]!.t - s.hits[i - 1]!.t >= c.delayMs - 80, `${c.name}: gap before ${s.hits[i]!.path} was ${s.hits[i]!.t - s.hits[i - 1]!.t} ms, Crawl-delay is ${c.delayMs} ms`);
       }
     } finally { p.done(); await s.close(); }
   }

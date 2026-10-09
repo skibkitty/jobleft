@@ -6,6 +6,7 @@
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { inflateRawSync, inflateSync } from 'node:zlib';
+import { recordFailure } from '../bin/checks.mjs';
 
 const { launch, AUDIT } = await import(new URL('../bin/driver.mjs', import.meta.url));
 
@@ -20,7 +21,7 @@ const ENV = {
 
 let failures = 0;
 const ok = (name) => console.log(`CHECK ok ${name}`);
-const fail = (name, why) => { failures++; console.log(`CHECK FAIL ${name}: ${String(why).replace(/\s+/g, ' ').slice(0, 600)}`); };
+const fail = (name, why) => { failures++; recordFailure(name); console.log(`CHECK FAIL ${name}: ${String(why).replace(/\s+/g, ' ').slice(0, 600)}`); };
 const skip = (name, why) => console.log(`CHECK skip ${name}: ${why}`);
 async function check(name, fn) {
   try {

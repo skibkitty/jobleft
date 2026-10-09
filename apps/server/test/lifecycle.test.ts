@@ -8,7 +8,8 @@ import { chmodSync, createReadStream, existsSync, mkdirSync, readdirSync, readFi
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
-import { CLI, MAIN, childEnv, cleanup, raw, scratchHome, spawnServer, stopServer, waitExit } from './helpers.ts';
+import { CLI, MAIN, childEnv, cleanup, freePort, raw, scratchHome, spawnServer, stopServer, waitExit, waitPortClosed } from './helpers.ts';
+import { DEFAULT_PORT, PORT_SPAN } from '@jobleft/contracts';
 
 function hashes(dir: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -89,18 +90,36 @@ test('a busy port is skipped', async () => {
 });
 
 test('the server stops within 10 seconds after its parent is killed', async () => {
+  // The port has to belong to this server alone. Every server prefers DEFAULT_PORT..+PORT_SPAN-1, and the other test
+  // files in this suite run in parallel, so a port out of the shared ramp can be claimed by another test's server the
+  // instant this one exits - which is exactly what a bare "is the port closed" check cannot tell apart from its own
+  // clean stop. Reserve a port outside the ramp, confirm the server actually got it, and only then measure.
   const home = scratchHome('parent');
-  const parent = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' }); // a parent that just lives (no /bin/sleep on Windows)
-  const a = spawnServer(home, { JOBLEFT_PARENT_PID: String(parent.pid) });
-  const info = await a.ready;
-  const t0 = Date.now();
-  parent.kill('SIGKILL');
-  const code = await waitExit(a.child, 12000);
-  assert.equal(code, 0);
-  assert.ok(Date.now() - t0 < 10000);
-  const r = await raw(info.port, { path: '/api/v1/health' }).catch(() => null);
-  assert.equal(r, null, 'the port is closed');
-  cleanup(home);
+  try {
+    for (let attempt = 1; ; attempt++) {
+      let port = await freePort();
+      while (port >= DEFAULT_PORT && port < DEFAULT_PORT + PORT_SPAN) port = await freePort();
+      const parent = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' }); // a parent that just lives (no /bin/sleep on Windows)
+      const a = spawnServer(home, { JOBLEFT_PARENT_PID: String(parent.pid), JOBLEFT_PORT: String(port) });
+      const info = await a.ready;
+      if (info.port !== port) {
+        // Reserved, then taken before the bind: the server fell back to the shared ramp. Give the port back and retry.
+        parent.kill('SIGKILL');
+        await stopServer(a.child, info.port, a.token);
+        assert.ok(attempt < 3, `port ${port} was taken before the bind three times running`);
+        continue;
+      }
+      const t0 = Date.now();
+      parent.kill('SIGKILL');
+      const code = await waitExit(a.child, 12000);
+      assert.equal(code, 0);
+      assert.ok(Date.now() - t0 < 10000);
+      await waitPortClosed(port);
+      return;
+    }
+  } finally {
+    cleanup(home);
+  }
 });
 
 test('an older data folder is upgraded with every item kept', async () => {

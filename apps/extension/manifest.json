@@ -4,19 +4,45 @@
   "version": "0.1.0",
   "description": "Fills job applications from your own jobleft app on this computer. You review every field and you submit.",
   "minimum_chrome_version": "120",
-  "permissions": ["storage", "activeTab", "scripting"],
-  "host_permissions": [
-    "http://127.0.0.1:47821/*", "http://127.0.0.1:47822/*", "http://127.0.0.1:47823/*", "http://127.0.0.1:47824/*", "http://127.0.0.1:47825/*",
-    "http://127.0.0.1:47826/*", "http://127.0.0.1:47827/*", "http://127.0.0.1:47828/*", "http://127.0.0.1:47829/*", "http://127.0.0.1:47830/*"
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
   ],
-  "background": { "service_worker": "background.js", "type": "module" },
+  "host_permissions": [
+    "http://127.0.0.1:47821/*",
+    "http://127.0.0.1:47822/*",
+    "http://127.0.0.1:47823/*",
+    "http://127.0.0.1:47824/*",
+    "http://127.0.0.1:47825/*",
+    "http://127.0.0.1:47826/*",
+    "http://127.0.0.1:47827/*",
+    "http://127.0.0.1:47828/*",
+    "http://127.0.0.1:47829/*",
+    "http://127.0.0.1:47830/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "jobleft: fill this application",
-    "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
   },
-  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:*"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsCZo8CzEB/O2ztgbRIsZqwvK5Db9aqFkQ+tCYZR98lwYDe+oJfIyPfBp0GM9bnYaXJ9069zv0fyHmfFSaaXazNeOGf0kftx/2OqjDyJfBlKmwxpFkUYGb+dMTUecIJJQJZWy1pMNxrat3PSs2/hDB4xkJI1goaDqYQ076TXE7tB0qU29t+vYluLCQOvwsA2o2/9/vkf0Zd/iZmsQS+RrGbOQlm0lEBq7RdKWw8kyXv7dQP/RPQ1jHAnJcBCstqPLQd5jNLaEh7ep6KJxahcFbd4gwtYG6SjHEsqHSIOi9q6WUdzkJ28f+L2nv9D5exRdTbnmAqk92mrVqljaG0bcUQIDAQAB"
 }

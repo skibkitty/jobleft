@@ -4,6 +4,7 @@
 // (screens agree with the API and with each other, nothing is lost after a reload), then undoes its changes.
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { recordFailure } from '../bin/checks.mjs';
 
 const { launch, AUDIT } = await import(new URL('../bin/driver.mjs', import.meta.url));
 
@@ -17,7 +18,7 @@ try { mkdirSync(SHOTS, { recursive: true }); } catch {}
 
 let failed = 0;
 const ok = (n) => console.log(`CHECK ok ${n}`);
-const fail = (n, why) => { failed++; console.log(`CHECK FAIL ${n}: ${String(why).replace(/\s+/g, ' ').slice(0, 400)}`); };
+const fail = (n, why) => { failed++; recordFailure(n); console.log(`CHECK FAIL ${n}: ${String(why).replace(/\s+/g, ' ').slice(0, 400)}`); };
 const skip = (n, why) => console.log(`CHECK skip ${n}: ${why}`);
 const check = (n, cond, why) => (cond ? ok(n) : fail(n, why));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

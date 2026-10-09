@@ -4,6 +4,7 @@
 // Prints one line per check: "CHECK ok <name>", "CHECK FAIL <name>: <why>" or "CHECK skip <name>: <why>".
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { recordFailure } from '../bin/checks.mjs';
 
 const { launch, AUDIT } = await import(new URL('../bin/driver.mjs', import.meta.url).href);
 
@@ -17,7 +18,7 @@ try { mkdirSync(SHOTS, { recursive: true }); } catch {}
 
 let failed = 0;
 const ok = (n) => console.log(`CHECK ok ${n}`);
-const fail = (n, why) => { failed++; console.log(`CHECK FAIL ${n}: ${String(why).replace(/\s+/g, ' ').slice(0, 400)}`); };
+const fail = (n, why) => { failed++; recordFailure(n); console.log(`CHECK FAIL ${n}: ${String(why).replace(/\s+/g, ' ').slice(0, 400)}`); };
 const skip = (n, why) => console.log(`CHECK skip ${n}: ${why}`);
 const check = (n, cond, why) => (cond ? ok(n) : fail(n, why));
 const START = Date.now();

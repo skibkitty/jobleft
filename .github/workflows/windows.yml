@@ -65,8 +65,14 @@ jobs:
         id: tests
         continue-on-error: true # the installer, the smoke and the replay still run; the job fails at the end
         shell: pwsh
-        # Every workspace package's suite, one node --test each, with a per-test time limit and a forced exit: a hang
-        # or a lingering handle shows up as a named failure, never as a silent 90-minute job (pnpm -r cannot pass these flags).
+        # Every workspace package's suite, one node --test each. A hang is caught by --test-timeout as a
+        # named failure; a suite that passes but will not exit on a lingering handle is caught by the
+        # step's timeout-minutes below. --test-force-exit is deliberately NOT used: on Windows it calls
+        # exit() with undici's keep-alive sockets still open and Node's libuv aborts the process with
+        # "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)" (src\win\async.c), turning a suite
+        # that just passed 10/10 into a crash. ci.yml runs the same suites via pnpm test with no
+        # force-exit and a timeout for the same reason.
+        timeout-minutes: 30
         run: |
           $failed = @()
           foreach ($dir in (Get-ChildItem -Path packages, apps -Directory)) {
@@ -74,15 +80,21 @@ jobs:
             if (-not (Get-ChildItem -Path (Join-Path $dir.FullName 'test') -Filter '*.test.ts' -ErrorAction SilentlyContinue)) { continue }
             "`n===== $($dir.FullName)"
             Push-Location $dir.FullName
-            node --test --test-timeout=180000 --test-force-exit "test/*.test.ts"
+            node --test --test-timeout=180000 "test/*.test.ts"
             if ($LASTEXITCODE -ne 0) { $failed += $dir.Name }
             Pop-Location
           }
           "`n===== failed suites: $($failed -join ', ')"
           if ($failed.Count -gt 0) { exit 1 }
 
-      - name: Build the UI
-        run: pnpm --filter @jobleft/ui build
+
+      - name: Build the extension and zip it
+        shell: pwsh
+        run: |
+          pnpm --filter @jobleft/extension build
+          $v = (Get-Content apps/server/package.json -Raw | ConvertFrom-Json).version
+          Compress-Archive -Path apps/extension/dist/* -DestinationPath "jobleft-autofill-$v.zip" -Force
+          "asset: jobleft-autofill-$v.zip"
 
       - name: Node runtime for the sidecar
         run: node apps/shell/scripts/fetch-node.mjs --target win-x64
@@ -93,6 +105,9 @@ jobs:
           "root node_modules/.pnpm: $(Test-Path node_modules/.pnpm)"
           "apps/ui/node_modules/vite: $(Test-Path apps/ui/node_modules/vite)"
           node -e "console.log('vite ->', require.resolve('vite/package.json', { paths: ['apps/ui'] }))"
+
+      - name: Build the UI
+        run: pnpm --filter @jobleft/ui build
 
       - name: Sidecar tree
         env:
@@ -126,6 +141,7 @@ jobs:
           while (-not (Test-Path $run) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
           if (-not (Test-Path $run)) { Get-Content "$env:APPDATA\jobleft\logs\sidecar.log" -ErrorAction SilentlyContinue | Select-Object -Last 30; throw "no run/server.json after 40 s" }
           $j = Get-Content $run | ConvertFrom-Json
+          "::add-mask::$($j.token)"
           $health = Invoke-RestMethod -Uri "http://127.0.0.1:$($j.port)/api/v1/health"
           "health: $($health | ConvertTo-Json -Compress)"
           if ($health.app -ne 'jobleft') { throw "health did not answer jobleft" }
@@ -146,6 +162,12 @@ jobs:
           name: jobleft-windows-setup
           path: apps/shell/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+      - name: Keep the extension zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobleft-extension
+          path: jobleft-autofill-*.zip
+          if-no-files-found: error
 
       - name: Attach to the release
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
@@ -154,8 +176,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'release') { '${{ github.event.release.tag_name }}' } else { '${{ github.event.inputs.release_tag }}' }
+          $v = (Get-Content apps/server/package.json -Raw | ConvertFrom-Json).version
           $setup = Get-ChildItem -Path apps/shell/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
-          gh release upload $tag $setup.FullName --clobber
+          $zip = "jobleft-autofill-$v.zip"
+          gh release upload $tag $setup.FullName $zip --clobber
 
       # The verdict on the suites comes last: the installer, its smoke and the release attach never wait on a flaky test.
       - name: Test result
@@ -216,6 +240,7 @@ jobs:
           while (-not (Test-Path $run) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
           if (-not (Test-Path $run)) { Get-Content "$env:APPDATA\jobleft\logs\sidecar.log" -ErrorAction SilentlyContinue | Select-Object -Last 30; throw "no run/server.json after 60 s" }
           $j = Get-Content $run | ConvertFrom-Json
+          "::add-mask::$($j.token)"
           "JOBLEFT_QA_URL=http://127.0.0.1:$($j.port)/#token=$($j.token)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "JOBLEFT_QA_API=http://127.0.0.1:$($j.port)/api/v1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           "JOBLEFT_QA_TOKEN=$($j.token)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8

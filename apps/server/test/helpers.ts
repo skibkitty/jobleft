@@ -5,6 +5,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
+import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { memorySecrets, newLaunchToken, startServer, type RunningServer } from '../src/index.ts';
@@ -21,7 +22,7 @@ export function scratchHome(tag: string): string {
 
 export interface Reply { status: number; headers: Record<string, string | string[] | undefined>; text: string; json: any; body: Buffer }
 
-export function raw(port: number, opts: { method?: string; path: string; headers?: Record<string, string>; body?: string | Buffer; host?: string }): Promise<Reply> {
+export function raw(port: number, opts: { method?: string; path: string; headers?: Record<string, string>; body?: string | Buffer; host?: string; timeoutMs?: number }): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { host: opts.host ?? `127.0.0.1:${port}`, ...(opts.headers ?? {}) };
     const req = request({ host: '127.0.0.1', port, method: opts.method ?? 'GET', path: opts.path, headers, setHost: false, agent: false }, (res) => {
@@ -36,9 +37,38 @@ export function raw(port: number, opts: { method?: string; path: string; headers
       });
     });
     req.on('error', reject);
+    // Without this a listener that accepts the connection and never answers hangs the caller forever: the deadline in
+    // waitPortClosed cannot fire while a probe is still in flight.
+    if (opts.timeoutMs !== undefined) req.setTimeout(opts.timeoutMs, () => { req.destroy(new Error(`no answer within ${opts.timeoutMs} ms`)); });
     if (opts.body !== undefined) req.write(opts.body);
     req.end();
   });
+}
+
+/** A free loopback port: bind :0, read what the OS handed out, close again. Inherently racy — the port is free again the moment it closes, so a caller must confirm it got the port it asked for. */
+export function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const port = (s.address() as { port: number }).port;
+      s.close(() => { resolve(port); });
+    });
+  });
+}
+
+/** Waits until nothing answers on a loopback port. Refused, reset and timed-out probes all count as closed; a probe that never settles cannot outlive probeTimeoutMs, so the wait as a whole is bounded by timeoutMs plus one probe. */
+export async function waitPortClosed(port: number, opts: { intervalMs?: number; timeoutMs?: number; probeTimeoutMs?: number } = {}): Promise<void> {
+  const intervalMs = opts.intervalMs ?? 250;
+  const timeoutMs = opts.timeoutMs ?? 8000;
+  const probeTimeoutMs = opts.probeTimeoutMs ?? 750;
+  const t0 = Date.now();
+  for (;;) {
+    const answering = await raw(port, { path: '/api/v1/health', timeoutMs: probeTimeoutMs }).then(() => true, () => false);
+    if (!answering) return;
+    if (Date.now() - t0 >= timeoutMs) throw new Error(`port ${port} is still answering ${timeoutMs} ms later`);
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
 }
 
 export interface TestServer {

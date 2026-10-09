@@ -29,6 +29,7 @@ Run these in the repository root.
 | `pnpm --filter @jobleft/shell pack` | Build the sidecar tree under `src-tauri/resources/` (see below) |
 | `pnpm --filter @jobleft/shell app:build` | `pack`, then `tauri build --debug --bundles app`: an unsigned `jobleft.app` at `.cache/cargo-target/debug/bundle/macos/jobleft.app` |
 | `pnpm --filter @jobleft/shell tauri dev` | Run the shell from source against the packed tree (set `CARGO_TARGET_DIR` to the shared folder first) |
+| `apps\shell\scripts\build-windows.ps1` | On Windows only: the whole build as one command (UI, sidecar tree, `jobleft_<version>_x64-setup.exe`, then install/start/health/stop). `--skip-smoke` stops after the installer. The Windows counterpart of `build-macos.sh` |
 
 Cargo output goes to the shared target folder `.cache/cargo-target` (`CARGO_TARGET_DIR`), never into the package. The
 Tauri CLI (`@tauri-apps/cli`, a dev dependency) is run by its file in the pnpm store, because `pnpm exec tauri` drops the
@@ -55,6 +56,16 @@ fetched by the bootstrapper when a machine lacks it). `.github/workflows/windows
 builds the installer (`pack.ts --target win-x64`, `tauri build --bundles nsis`), installs it silently, starts the app,
 checks health, stops it through the shutdown route, and attaches `jobleft_<version>_x64-setup.exe` to a release.
 The installer is not code-signed yet (publik lists it as unsigned).
+
+`pnpm --filter @jobleft/shell app:build` is macOS-only and does not work on Windows (`$(cd ../.. && pwd)` is POSIX
+syntax and `--bundles app` is a macOS target). Locally, run `apps\shell\scripts\build-windows.ps1`, which is the same
+sequence the workflow runs — `pnpm --filter @jobleft/ui build`, `node apps/shell/scripts/fetch-node.mjs --target
+win-x64`, `pack.ts --target win-x64`, then `tauri build --bundles nsis` — and then smoke-tests the result. It needs
+the Visual Studio Build Tools with the MSVC C++ x64/x86 component; `cl.exe` does not have to be on PATH, because
+cargo finds it through the same Visual Studio detection CI relies on. Cargo output goes to the shared
+`.cache/cargo-target` like on macOS, so the installer lands at `.cache/cargo-target/release/bundle/nsis/` (the
+workflow builds without `CARGO_TARGET_DIR`, so on CI it is `apps/shell/src-tauri/target/release/bundle/nsis/`).
+A first build compiles every Rust dependency and takes several minutes.
 
 ## Test hooks (environment; the app never sets them)
 

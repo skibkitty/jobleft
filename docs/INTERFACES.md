@@ -1501,7 +1501,7 @@ export type { SupportInfo, SupportLevel } from './support.ts';
 ```
 <!-- END GENERATED: sig:apps/extension -->
 
-No Chrome Web Store submission (gate G-store).
+No Chrome Web Store submission (gate G-store); the extension zip is shipped with releases.
 
 ### `@jobleft/shell` (apps/shell)
 

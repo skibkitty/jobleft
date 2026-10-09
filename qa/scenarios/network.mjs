@@ -10,6 +10,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { recordFailure } from '../bin/checks.mjs';
 
 const { launch, AUDIT } = await import(new URL('../bin/driver.mjs', import.meta.url));
 
@@ -27,7 +28,7 @@ mkdirSync(SHOTS, { recursive: true });
 
 let failed = 0;
 const ok = (name) => console.log(`CHECK ok ${name}`);
-const fail = (name, why) => { failed++; console.log(`CHECK FAIL ${name}: ${String(why).replace(/\s+/g, ' ').slice(0, 400)}`); };
+const fail = (name, why) => { failed++; recordFailure(name); console.log(`CHECK FAIL ${name}: ${String(why).replace(/\s+/g, ' ').slice(0, 400)}`); };
 const skip = (name, why) => console.log(`CHECK skip ${name}: ${why}`);
 const check = (name, cond, why) => (cond ? ok(name) : fail(name, why));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

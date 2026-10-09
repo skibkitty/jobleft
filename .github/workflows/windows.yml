@@ -176,8 +176,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = if ('${{ github.event_name }}' -eq 'release') { '${{ github.event.release.tag_name }}' } else { '${{ github.event.inputs.release_tag }}' }
+          $v = (Get-Content apps/server/package.json -Raw | ConvertFrom-Json).version
           $setup = Get-ChildItem -Path apps/shell/src-tauri/target/release/bundle/nsis -Filter '*.exe' | Select-Object -First 1
-          gh release upload $tag $setup.FullName --clobber
+          $zip = "jobleft-autofill-$v.zip"
+          gh release upload $tag $setup.FullName $zip --clobber
 
       # The verdict on the suites comes last: the installer, its smoke and the release attach never wait on a flaky test.
       - name: Test result

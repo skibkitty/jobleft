@@ -63,7 +63,7 @@ You need macOS or Linux, Node 24 or newer, pnpm, and Google Chrome.
    ```sh
    pnpm --filter @jobleft/extension build
    ```
-   You see uilt .../apps/extension/dist.
+   You see built .../apps/extension/dist.
 3. **Downloaded zip (alternative):** download jobleft-autofill-<app-version>.zip from the [jobleft releases page](https://github.com/Blueturboguy07/jobleft/releases/latest), unzip it, and load the extracted folder as unpacked in Chrome.
 4. Start the stand-in app in a second terminal:
    ```sh
@@ -96,7 +96,7 @@ You need macOS or Linux, Node 24 or newer, pnpm, and Google Chrome.
 9. Fill: open `http://127.0.0.1:47900/practice/job-a.html`. Click the jobleft button. The popup shows
    "This page: Greenhouse · supported", the job "Software Engineer · Acme Practice Co" and the resume made for this
    job. Click **Fill this application**.
-9. Read the report: a panel opens on the right of the page. Each field it wrote has a teal outline. Each required
+10. Read the report: a panel opens on the right of the page. Each field it wrote has a teal outline. Each required
    field that is still empty has a dashed amber outline. Click a row to scroll to its field.
 
 ## 4. What you see
